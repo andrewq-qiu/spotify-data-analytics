@@ -1,5 +1,6 @@
 import networkx as nx
-from plotly.graph_objs import Scatter, Figure
+from plotly.graph_objs import Scatter, Figure, Bar, Layout, Pie
+from song_graph import SongGraph, QUANTIFIERS
 
 
 def remove_integer_suffix(s: str) -> str:
@@ -72,3 +73,56 @@ def visualize_graph(graph_nx: nx.Graph):
     fig.update_yaxes(showgrid=False, zeroline=False, visible=False)
 
     fig.show()
+
+
+def visualize_attribute_header_distribution_bar(graph: SongGraph, attribute_header: str):
+    """"""
+
+    num_neighbours_child = []
+    num_neighbours_parent = []
+
+    total_neighbours_child = 0
+    total_neighbours_parent = 0
+
+    quantifiers = []
+
+    for attr_v_child in graph.get_attribute_vertices_by_header(attribute_header):
+        attribute_label = attr_v_child.item
+
+        attr_v_parent = graph.parent_graph.get_vertex_by_item(attribute_label)
+
+        num_neighbours_child.append(len(attr_v_child.neighbours))
+        num_neighbours_parent.append(len(attr_v_parent.neighbours))
+
+        total_neighbours_child += len(attr_v_child.neighbours)
+        total_neighbours_parent += len(attr_v_parent.neighbours)
+
+        quantifiers.append(attr_v_child.quantifier)
+
+    relative_neighbours_child = [num / total_neighbours_child
+                                 for num in num_neighbours_child]
+
+    relative_neighbours_parent = [num / total_neighbours_parent
+                                  for num in num_neighbours_parent]
+
+    fig = Figure(data=[
+        Bar(x=quantifiers, y=relative_neighbours_parent, name='Songs from the same time period', opacity=0.5),
+        Bar(x=quantifiers, y=relative_neighbours_child, name='Playlist', opacity=0.7)
+    ], layout=Layout(barmode='overlay', title=attribute_header))
+
+    fig.show()
+
+
+def visualize_attribute_header_distribution_pie(graph: SongGraph, attribute_header: str):
+    """"""
+
+    num_neighbours = []
+    quantifiers = []
+
+    for attr_v in graph.get_attribute_vertices_by_header(attribute_header):
+        num_neighbours.append(len(attr_v.neighbours))
+        quantifiers.append(attr_v.quantifier)
+
+    fig = Figure(data=[Pie(labels=quantifiers, values=num_neighbours)])
+    fig.show()
+

@@ -1,6 +1,6 @@
 import ast
 import csv
-from song_graph import SongGraph, Song, HEADERS, FLOAT_HEADERS, INT_HEADERS
+from song_graph import SongGraph, Song, DATASET_HEADERS, FLOAT_HEADERS, INT_HEADERS
 
 
 def load_song_from_row(row: list[str]) -> Song:
@@ -26,7 +26,7 @@ def load_song_from_row(row: list[str]) -> Song:
             # Then this row entry should be an attribute
 
             # The attribute name
-            attr = HEADERS[i]
+            attr = DATASET_HEADERS[i]
 
             if attr in FLOAT_HEADERS:
                 attributes[attr] = float(row[i])
@@ -37,7 +37,7 @@ def load_song_from_row(row: list[str]) -> Song:
     return Song(name, spotify_id, artists, attributes)
 
 
-def get_song_graph_from_decades(decades: set) -> SongGraph:
+def get_song_graph_from_decades(decades: set, year_separation: int = 10) -> SongGraph:
     """Return a song graph containing songs from the
     decades in decades.
 
@@ -45,23 +45,27 @@ def get_song_graph_from_decades(decades: set) -> SongGraph:
     For example, if decades={1980, 2000, 1930},
     then get_songs_from_decades(decades) returns songs from the 80s,
     2000s, and 30s.
+
+    year_separation defines the way year attribute vertices are to be
+    created. I.e. the intervals in year attribute vertices. For example,
+    a year_separation of 10 will create year attribute vertices
+    for each decade spanned by the playlist.
     """
+
+    graph = SongGraph()
 
     for decade in decades:
         with open(f'data/song_data_{decade}.csv', 'r', encoding='Latin1') as f:
             reader = csv.reader(f)
             headers = next(reader)
 
-            assert headers == HEADERS
-
-            graph = SongGraph()
-
+            assert headers == DATASET_HEADERS
             for row in reader:
                 # The name column occurs in index 12
                 song = load_song_from_row(row)
                 graph.add_song(song)
 
-    graph.generate_attribute_vertices()
+    graph.generate_attribute_vertices(year_separation)
 
     return graph
 
@@ -78,7 +82,7 @@ def get_song_graph_from_file(file_name: str) -> SongGraph:
         reader = csv.reader(f)
         headers = next(reader)
 
-        assert headers == HEADERS
+        assert headers == DATASET_HEADERS
 
         graph = SongGraph()
 

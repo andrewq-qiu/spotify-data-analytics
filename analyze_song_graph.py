@@ -4,9 +4,10 @@ from song_graph import SongGraph, AttributeVertex, SongVertex, Vertex, Song
 import networkx as nx
 
 
-def get_most_significant_attributes_vertices(graph: SongGraph, n: int = 5, ignore_year=True) -> \
+def get_most_significant_attributes_vertices(graph: SongGraph, n: int = 5, ignore: set[str] = None) -> \
         list[AttributeVertex]:
-    """Return the n most significant attribute vertices in the song graph.
+    """Return the n most significant attribute vertices in the song graph
+    ignoring all attribute vertices with attribute header in ignore.
 
     Preconditions:
         - song_graph.are_attributes_created()
@@ -17,30 +18,11 @@ def get_most_significant_attributes_vertices(graph: SongGraph, n: int = 5, ignor
 
     to_return = []
 
-    for attr in attr_vertices:
+    for attr_v in attr_vertices:
         if len(to_return) >= n:
             return to_return
-        elif not ignore_year or attr.attribute_name != 'year':
-            # If we are ignoring the year attribute, do
-            # do not add the attribute if it is the year attribute.
-
-            to_return.append(attr)
-
-    return to_return
-
-
-def get_most_significant_attributes(
-        graph: SongGraph, n: int = 5, ignore_year=True) -> list[str]:
-    """Return the n most significant attributes in the song graph.
-
-    Preconditions:
-        - song_graph.are_attributes_created()
-    """
-
-    to_return = []
-
-    for v in get_most_significant_attributes_vertices(graph, n, ignore_year):
-        to_return.append(v.item)
+        elif ignore is None or attr_v.attribute_header not in ignore:
+            to_return.append(attr_v)
 
     return to_return
 
@@ -187,8 +169,12 @@ def find_clusters(graph: SongGraph, vertex_type: str = 'song', similarity_algori
     return clusters
 
 
-def get_top_attributes_from_song_cluster(graph: SongGraph, cluster: set[SongVertex], n: int = 3):
-    """Return the top n attributes of the song cluster.
+def get_top_attributes_from_song_cluster(graph: SongGraph,
+                                         cluster: set[SongVertex],
+                                         n: int = 3,
+                                         ignore: set[str] = None) -> list[AttributeVertex]:
+    """Return the top n attributes of the song cluster ignoring
+    all attribute headers contained in ignore.
 
     (i.e.) the attribute with the most edges to songs in the cluster.
     """
@@ -198,14 +184,24 @@ def get_top_attributes_from_song_cluster(graph: SongGraph, cluster: set[SongVert
         key=lambda x: len([0 for v in x.neighbours if v in cluster]),
         reverse=True)
 
-    return attribute_vertices[:n]
+    to_return = []
+
+    for attr_v in attribute_vertices:
+        if len(to_return) == n:
+            return to_return
+        elif ignore is None or attr_v.attribute_header not in ignore:
+            to_return.append(attr_v)
+
+    return to_return
 
 
 def add_top_attribute_vertices_to_song_cluster(graph: SongGraph, graph_nx: nx.Graph,
-                                               cluster: set[SongVertex], added_count: dict[str, int]):
-    """Add the top two attribute vertices of the song cluster to a
-    graph_nx graph. Get the top three attribute vertices from data
-    stored in the SongGraph graph.
+                                               cluster: set[SongVertex], added_count: dict[str, int],
+                                               ignore: set[str] = None):
+    """Add the top three attribute vertices of the song cluster to a
+    graph_nx graph such that the attribute headers of the vertices
+    are not in ignore. Retrieve these attribute vertices
+    from graph.
 
     Create an edge between each of the new attribute vertices to
     each of the song between the song clusters.
@@ -221,7 +217,7 @@ def add_top_attribute_vertices_to_song_cluster(graph: SongGraph, graph_nx: nx.Gr
         - all(song_v in graph_nx.nodes for song_v in cluster)
     """
 
-    top_attributes = get_top_attributes_from_song_cluster(graph, cluster, 2)
+    top_attributes = get_top_attributes_from_song_cluster(graph, cluster, 3, ignore)
     for attr in top_attributes:
         # Add a number to the end of the attributes to differentiate
         # the top attributes of one cluster to another if they are
@@ -248,7 +244,8 @@ def add_top_attribute_vertices_to_song_cluster(graph: SongGraph, graph_nx: nx.Gr
             graph_nx.add_edge(song_name, added_vertex_label)
 
 
-def create_clustered_networkx_song_graph(graph: SongGraph, similarity_threshold: float = 0.75):
+def create_clustered_networkx_song_graph(graph: SongGraph, similarity_threshold: float = 0.75,
+                                         ignore: set[str] = None):
     """Return a focused networkx song graph based on the
     songs in the song graph.
 
@@ -257,8 +254,8 @@ def create_clustered_networkx_song_graph(graph: SongGraph, similarity_threshold:
 
     For each song cluster with 5 or more songs, create 2
     attribute vertices for the top 2 attributes of the song cluster
-    and create an edge between each of the attribute vertices
-    and each of the song vertices.
+    (whose attribute headers are not in ignore) and create an edge
+    between each of the attribute vertices and each of the song vertices.
 
     Preconditions:
         - 0 <= similarity_threshold <= 1
@@ -282,7 +279,7 @@ def create_clustered_networkx_song_graph(graph: SongGraph, similarity_threshold:
 
         # Get top three attributes for large enough clusters
         if len(cluster) >= 5:
-            add_top_attribute_vertices_to_song_cluster(graph, graph_nx, cluster, added_count)
+            add_top_attribute_vertices_to_song_cluster(graph, graph_nx, cluster, added_count, ignore)
 
     return graph_nx
 
@@ -292,27 +289,40 @@ def get_attribute_header_deviation(graph: SongGraph, attribute_header: str) -> f
     a child graph and its parent graph.
 
     The deviation score is equal to the absolute value difference
-    between the averages from the child and parent graph, divided
+    between the averages of the child and parent graph, divided
     by the standard deviation of the parent graph. (Comparable to the
     z-score or standard score).
 
     Preconditions:
         - attribute_header in song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
     """
-    p_average, st_dev = graph.get_attribute_header_stats(attribute_header, use_parent=True)
-    c_average, _ = graph.get_attribute_header_stats(attribute_header)
+    _, _, p_average, st_dev = graph.get_attribute_header_stats(attribute_header, use_parent=True)
+    _, _, c_average, _ = graph.get_attribute_header_stats(attribute_header)
+
+    return abs(c_average - p_average) / st_dev
 
 
-def get_most_deviated_attribute_headers(graph: SongGraph, n: int) -> list[str]:
+def get_most_deviated_attribute_headers(graph: SongGraph, n: int, ignore: set[str] = None) -> list[str]:
     """Return the top n attribute headers of a child SongGraph
-    which deviate the most from median of the parent SongGraph.
+    which deviate the most from the average of the parent SongGraph.
+    Ignore all attribute headers in ignore and do not return them.
 
     Preconditions:
         - graph.parent_graph is not None
     """
 
-    # attr_headers = list(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
-    # attr_headers.sort(key=lambda x: 1graph.get_attribute_header_stats())
+    attr_headers = list(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
+    attr_headers.sort(key=lambda x: get_attribute_header_deviation(graph, x), reverse=True)
+
+    to_return = []
+
+    for header in attr_headers:
+        if len(to_return) == n:
+            return to_return
+        elif ignore is None or header not in ignore:
+            to_return.append(header)
+
+    return to_return
 
 
 

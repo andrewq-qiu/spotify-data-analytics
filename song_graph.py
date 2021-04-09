@@ -1,14 +1,12 @@
-gitfrom __future__ import annotations
+from __future__ import annotations
 from dataclasses import dataclass
 from typing import Union, Any, Iterator, Optional
 import math
-import networkx as nx
-
 
 # =============== GLOBAL VARIABLES ===============
 
 # List of expected headers from the song dataset
-HEADERS = ['acousticness', 'artists', 'danceability', 'duration_ms',
+DATASET_HEADERS = ['acousticness', 'artists', 'danceability', 'duration_ms',
            'energy', 'explicit', 'id', 'instrumentalness', 'key', 'liveness',
            'loudness', 'mode', 'name', 'popularity', 'release_date',
            'speechiness', 'tempo', 'valence', 'year']
@@ -19,19 +17,26 @@ HEADERS = ['acousticness', 'artists', 'danceability', 'duration_ms',
 # considered as attributes or converted to attribute vertices.
 FLOAT_HEADERS = {'acousticness', 'danceability', 'energy', 'instrumentalness',
                  'liveness', 'loudness', 'speechiness', 'tempo', 'valence'}
-INT_HEADERS = {'key', 'mode', 'popularity', 'year', 'explicit'}
+INT_HEADERS = {'popularity', 'year', 'explicit'}
 
 # Headers that are associated to attributes that represent
-# exact rather than continuous values. For example, "mode" is either 1 or 0.
-# Map each exact value to a label that describes them.
+# exact values. For example, "mode" is either 1 or 0.
+# Map each exact value to a quantifier that describes them.
+EXACT_HEADERS = {'explicit': {0: 'not', 1: ''}}
 
-# It is assumed that all other headers associated to attributes
-# that are not in this dict represent continuous values.
-EXACT_HEADERS = {'mode': {0: 'minor', 1: 'major'},
-                 'explicit': {0: 'not explicit', 1: 'explicit'},
-                 'key': {}}
+# Headers that are associated to attributes that can span
+# a range of values.
+CONTINUOUS_HEADERS = {'acousticness', 'danceability', 'energy',
+                      'instrumentalness', 'liveness', 'loudness',
+                      'popularity', 'speechiness', 'tempo',
+                      'valence', 'year'}
 
-# =============== END ==========================
+# The list of quantifiers which describe the different attributes
+# associate with a continuous attribute header.
+QUANTIFIERS = ['very low', 'low', 'medium low', 'medium high', 'high', 'very high']
+
+
+# =============== GLOBAL VARIABLES END ===============
 
 
 class Song:
@@ -70,14 +75,14 @@ class AttributeVertex(Vertex):
     For example, an attribute vertex could describe high loudness.
     """
     item: str
-    attribute_name: str
+    attribute_header: str
     quantifier: str
 
-    def __init__(self, attribute_name: str, quantifier: str):
-        self.attribute_name = attribute_name
+    def __init__(self, attribute_header: str, quantifier: str):
+        self.attribute_header = attribute_header
         self.quantifier = quantifier
 
-        Vertex.__init__(self, quantifier + ' ' + attribute_name)
+        Vertex.__init__(self, quantifier + ' ' + attribute_header)
 
     def matches_with(self, song: Song):
         """Return whether or the song matches with the attribute vertex.
@@ -126,19 +131,19 @@ class AttributeVertexContinuous(AttributeVertex):
     could represent 0.8 <= danceability <= 1.0
 
     Instance Attributes:
-        - attribute_name: the name of the attribute (ex. danceability)
+        - attribute_header: the header of the attribute (ex. danceability)
         - quantifier: a string quantifying the attribute. Ex: high, low, average
         - value_range: a tuple representing the inclusive range of values represented
     """
     item: str
-    attribute_name: str
+    attribute_header: str
     quantifier: str
     value_interval: Interval
 
-    def __init__(self, attribute_name: str, quantifier: str,
+    def __init__(self, attribute_header: str, quantifier: str,
                  value_interval: Interval):
 
-        AttributeVertex.__init__(self, attribute_name, quantifier)
+        AttributeVertex.__init__(self, attribute_header, quantifier)
         self.value_interval = value_interval
 
     def matches_with(self, song: Song) -> bool:
@@ -148,7 +153,7 @@ class AttributeVertexContinuous(AttributeVertex):
         (i.e. whether or not the attribute in the song
         and its value matches with this attribute vertex).
         """
-        return self.value_interval.is_inside(song.attributes[self.attribute_name])
+        return self.value_interval.is_inside(song.attributes[self.attribute_header])
         
 
 class AttributeVertexExact(AttributeVertex):
@@ -167,9 +172,9 @@ class AttributeVertexExact(AttributeVertex):
         - value: the exact value represented by the attribute
     """
 
-    def __init__(self, attribute_name: str, quantifier: str,
+    def __init__(self, attribute_header: str, quantifier: str,
                  value: Any):
-        AttributeVertex.__init__(self, attribute_name, quantifier)
+        AttributeVertex.__init__(self, attribute_header, quantifier)
         self.value = value
 
     def matches_with(self, song: Song) -> bool:
@@ -177,7 +182,7 @@ class AttributeVertexExact(AttributeVertex):
         matches exactly with the corresponding attribute
         in the song.
         """
-        return song.attributes[self.attribute_name] == self.value
+        return song.attributes[self.attribute_header] == self.value
 
 
 class SongVertex(Vertex):
@@ -257,10 +262,6 @@ class SongGraph(Graph):
         self._attributes = {attribute: {}
                             for attribute in INT_HEADERS.union(FLOAT_HEADERS)}
 
-    def update_parent_graph(self, parent_graph: SongGraph):
-        """Change the graph's parent graph."""
-        self.parent_graph = parent_graph
-
     def are_attributes_created(self) -> bool:
         """Return whether or not the attribute vertices of the
         song graph have been created yet."""
@@ -283,7 +284,7 @@ class SongGraph(Graph):
             raise ValueError
         else:
             self._vertices[vertex.item] = vertex
-            self._attributes[vertex.attribute_name][vertex.quantifier] = vertex
+            self._attributes[vertex.attribute_header][vertex.quantifier] = vertex
 
     def get_attribute_header_stats(self, attribute_header: str, use_parent: bool = False)\
             -> tuple[float, float, float, float]:
@@ -340,6 +341,16 @@ class SongGraph(Graph):
             for quantifier in self._attributes[attribute]:
                 yield self._attributes[attribute][quantifier]
 
+    def get_attribute_vertices_by_header(self, attribute_header: str) -> Iterator[AttributeVertex]:
+        """(Iterator) Return the associated attribute vertices to an attribute header.
+        Raise a ValueError if the attribute header does not exist in the graph.
+        """
+        if attribute_header in self._attributes:
+            for quantifier in self._attributes[attribute_header]:
+                yield self._attributes[attribute_header][quantifier]
+        else:
+            raise ValueError
+
     def get_songs(self) -> Iterator[Song]:
         """(Iterator) Return all the songs in the graph."""
         for item in self._vertices:
@@ -360,7 +371,108 @@ class SongGraph(Graph):
                 if attr_v.matches_with(song):
                     self.add_edge(song, attr_v.item)
 
-    def generate_attribute_vertices(self, use_parent: bool = False):
+    def generate_attr_vertices_from_header_flat(self, attribute_header: str):
+        """Generate attribute vertices in the song graph
+        given a specific CONTINUOUS attribute header.
+
+        The flat algorithm follows the following separation:
+             Split the attribute values into six intervals, which will
+             each be represented by an attribute vertex. Ensure that roughly
+             ~1/6 songs fall into each interval.
+
+             So plotting a distribution curve will result in a flat line.
+
+                    Do not use the parent graph to generate the attribute vertices.
+
+        Preconditions:
+            - attribute_header in self.continuous_headers
+        """
+
+        sorted_songs = sorted(self.get_songs(), key=lambda x: x.attributes[attribute_header])
+
+        song_num = 0
+        quantifier_num = 0
+        next_target = self.num_songs / 6
+        last_upper_bound = 0
+
+        for song in sorted_songs:
+            # The percentage of songs iterated through
+            attr_value = song.attributes[attribute_header]
+
+            if song_num >= next_target:
+                # Move onto the next target
+                if quantifier_num == 0:
+                    # If it's the first interval
+                    interval = Interval('open', -math.inf, attr_value, 'open')
+                else:
+                    interval = Interval('closed', last_upper_bound, attr_value, 'open')
+
+                new_v = AttributeVertexContinuous(attribute_header,
+                                                  QUANTIFIERS[quantifier_num],
+                                                  interval)
+
+                self._add_attribute_vertex(new_v)
+
+                quantifier_num += 1
+                next_target += self.num_songs / 6
+                last_upper_bound = attr_value
+
+            song_num += 1
+            last_song = song
+
+        # Complete the last attribute quantifier
+        interval = Interval('closed', last_upper_bound, math.inf, 'open')
+
+        new_v = AttributeVertexContinuous(attribute_header,
+                                          QUANTIFIERS[quantifier_num],
+                                          interval)
+
+        self._add_attribute_vertex(new_v)
+
+    def generate_attr_vertices_from_header_even(self, attribute_header: str):
+        """Generate attribute vertices in the song graph
+        given a specific CONTINUOUS attribute header.
+
+        The 'even' algorithm follows the following separation:
+            Split the attribute values into six intervals, which will
+            each be represented by an attribute vertex. The interior
+            four intervals will each have the same length, which is
+            calculated by the minimum and maximum of attribute values
+            for the songs in self.
+
+            The two exterior intervals have the same effective length,
+            except the left interval extends to -infinity and the
+            right interval extends to +infinity.
+
+        Do not use the parent graph to generate the attribute vertices.
+
+        Preconditions:
+            - attribute_header in self.continuous_headers
+        """
+
+        min_, max_, _, _ = self.get_attribute_header_stats(attribute_header)
+        length = (max_ - min_) / 6
+
+        # Left exterior interval
+        left_interval = Interval('open', -math.inf, length, 'open')
+        left_v = AttributeVertexContinuous(attribute_header, QUANTIFIERS[0], left_interval)
+        self._add_attribute_vertex(left_v)
+
+        for i in range(1, 5):
+            start = length * i
+            end = length * (i + 1)
+
+            interval = Interval('closed', start, end, 'open')
+            v = AttributeVertexContinuous(attribute_header, QUANTIFIERS[i], interval)
+
+            self._add_attribute_vertex(v)
+
+        # Right exterior interval
+        right_interval = Interval('closed', length * 5, math.inf, 'open')
+        right_v = AttributeVertexContinuous(attribute_header, QUANTIFIERS[-1], right_interval)
+        self._add_attribute_vertex(right_v)
+
+    def generate_attribute_vertices(self, year_separation: int = 10, use_parent: bool = False):
         """Call this function only once most -> all of the
         data wanted is loaded into the graph.
 
@@ -373,10 +485,17 @@ class SongGraph(Graph):
         use_parent determines whether or not to use the stats from
         a parent graph and affects the behaviour of continuous attributes.
             If use_parent is False,
-            Continuous Attributes are split into six attribute vertices based on distribution
-            of attribute values:
+                Continuous Attributes are split into six attribute vertices based on distribution
+                of attribute values:
+
                 very low, low, medium low, medium high, high, very high
-                such that ~1/6 of songs fall into each attribute vertex
+                    - 'instrumentalness' is split via the even algorithm
+                        (see SongGraph.generate_attr_vertices_from_header_even)
+                    - 'year' is split depending on the year_separation parameter.
+                        For example, a year_separation of 10 represents splitting
+                        the years into decades.
+                    - all other continuous attribute headers are split via the flat algorithm
+                        (see SongGraph.generate_attr_vertices_from_header_flat)
 
             If use_parent is True,
             Use the continuous attribute ranges of the parent.
@@ -392,100 +511,48 @@ class SongGraph(Graph):
                 # use_parent implies the attributes of the parent have been created
         """
 
-        attributes_headers = FLOAT_HEADERS.union(INT_HEADERS)
+        for attribute_header in EXACT_HEADERS:
+            # Create an exact attribute vertex for each "state" of the attribute
+            states = EXACT_HEADERS[attribute_header]
 
-        for attribute_header in attributes_headers:
-            if attribute_header in EXACT_HEADERS:
-                # Create an exact attribute vertex for each "state" of the attribute
-                states = EXACT_HEADERS[attribute_header]
+            for state in states:
+                vertex = AttributeVertexExact(attribute_header, states[state], state)
+                self._add_attribute_vertex(vertex)
 
-                for state in states:
-                    vertex = AttributeVertexExact(attribute_header, states[state], state)
-                    self._add_attribute_vertex(vertex)
-            # Implied that the attribute header is for a continuous
-            # attribute for the next two cases
-            elif use_parent:
-                attribute_quantifiers = ['very low', 'low', 'medium low', 'medium high', 'high', 'very high']
+        if use_parent:
+            for attr_v in self.parent_graph.get_attribute_vertices():
+                attribute_header = attr_v.attribute_header
+                quantifier = attr_v.quantifier
 
-                for quantifier in attribute_quantifiers:
-                    attribute_label = quantifier + ' ' + attribute_header
-                    parent_attr_v = self.parent_graph.get_vertex_by_item(attribute_label)
-                    assert isinstance(parent_attr_v, AttributeVertexContinuous)
-
-                    new_v = AttributeVertexContinuous(attribute_header,
-                                                      quantifier,
-                                                      parent_attr_v.value_interval)
-
+                if attribute_header in CONTINUOUS_HEADERS:
+                    new_v = AttributeVertexContinuous(attribute_header, quantifier, attr_v.value_interval)
                     self._add_attribute_vertex(new_v)
 
+            self._attributes_created = True
+            self._generate_edges()
+            return
+
+        for attribute_header in CONTINUOUS_HEADERS:
+            if attribute_header == 'instrumentalness':
+                self.generate_attr_vertices_from_header_even(attribute_header)
+            elif attribute_header == 'year':
+                # Separate years into decades
+                min_year, max_year, _, _ = self.get_attribute_header_stats(attribute_header)
+
+                min_decade = int(min_year // year_separation) * year_separation
+                max_decade = int(max_year // year_separation) * year_separation
+
+                for period_start in range(min_decade, max_decade + year_separation, year_separation):
+                    period_end = period_start + year_separation
+                    interval = Interval('closed', period_start, period_end, 'open')
+                    attr_v = AttributeVertexContinuous(attribute_header, f'({period_start}-{period_end})', interval)
+                    self._add_attribute_vertex(attr_v)
+
             else:
-                attribute_quantifiers = ['very low', 'low', 'medium low', 'medium high', 'high', 'very high']
-
-                sorted_songs = sorted(self.get_songs(), key=lambda x: x.attributes[attribute_header])
-
-                song_num = 0
-                quantifier_num = 0
-                next_target = self.num_songs / 6
-                last_upper_bound = sorted_songs[0].attributes[attribute_header]
-
-                last_song = None
-
-                for song in sorted_songs:
-                    # The percentage of songs iterated through
-                    attr_value = song.attributes[attribute_header]
-
-                    if song_num >= next_target:
-                        # Move onto the next target
-                        interval = Interval('closed', last_upper_bound, attr_value, 'open')
-
-                        new_v = AttributeVertexContinuous(attribute_header,
-                                                          attribute_quantifiers[quantifier_num],
-                                                          interval)
-
-                        self._add_attribute_vertex(new_v)
-
-                        quantifier_num += 1
-                        next_target += self.num_songs / 6
-                        last_upper_bound = attr_value
-
-                    song_num += 1
-                    last_song = song
-
-                # Complete the last attribute quantifier
-                interval = Interval('closed', last_upper_bound,
-                                    last_song.attributes[attribute_header], 'closed')
-
-                new_v = AttributeVertexContinuous(attribute_header,
-                                                  attribute_quantifiers[quantifier_num],
-                                                  interval)
-
-                self._add_attribute_vertex(new_v)
+                self.generate_attr_vertices_from_header_flat(attribute_header)
 
         self._attributes_created = True
         self._generate_edges()
-
-    def to_networkx(self, max_vertices: int = 5000) -> nx.Graph:
-        """Convert this graph into a networkx Graph.
-
-        max_vertices specifies the maximum number of vertices that can appear in the graph.
-        (This is necessary to limit the visualization output for large graphs.)
-
-        Note that this method is provided for you, and you shouldn't change it.
-        """
-        graph_nx = nx.Graph()
-        for song in self.get_songs():
-            graph_nx.add_node(song.name, kind='song')
-            v = self._vertices[song]
-
-            for u in v.neighbours:
-                graph_nx.add_node(u.item, kind='attribute')
-
-                graph_nx.add_edge(song.name, u.item)
-
-            if graph_nx.number_of_nodes() >= max_vertices:
-                break
-
-        return graph_nx
 
 
 if __name__ == '__main__':

@@ -96,10 +96,16 @@ def get_songs_from_playlist_url(url: str) -> list[Song]:
 
 
 def create_song_graph_from_songs(songs: list[Song],
-                                 parent_graph: song_graph.SongGraph = None) -> song_graph.SongGraph:
+                                 parent_graph: song_graph.SongGraph = None,
+                                 year_separation: int = 10) -> song_graph.SongGraph:
     """Create and return a song graph from a list of songs.
 
     (Optional) Add a parent graph from a larger dataset to the new song graph.
+
+    (Optional) year_separation defines the way year attribute vertices are to be
+    created. I.e. the intervals in year attribute vertices. For example,
+    a year_separation of 10 will create year attribute vertices
+    for each decade spanned by the playlist.
 
     Preconditions:
         - parent_graph is None or parent_graph.are_attributes_created()
@@ -112,20 +118,25 @@ def create_song_graph_from_songs(songs: list[Song],
         graph.add_song(song)
 
     if parent_graph is None:
-        graph.generate_attribute_vertices()
+        graph.generate_attribute_vertices(year_separation)
     else:
-        graph.generate_attribute_vertices(use_parent=True)
+        graph.generate_attribute_vertices(use_parent=True, year_separation=year_separation)
 
     return graph
 
 
-def create_dataset_and_playlist_graphs_from_url(url: str) -> tuple[song_graph.SongGraph, song_graph.SongGraph]:
+def create_dataset_and_playlist_graphs_from_url(url: str, year_separation: int = 10) -> tuple[song_graph.SongGraph, song_graph.SongGraph]:
     """From a Spotify playlist URL, load relevant songs
     from the Spotify dataset in the decades of songs spanned by the playlist.
     Store these songs in a song graph.
 
     Create a song graph containing the songs of the playlist
     with the larger dataset song graph as its parent graph.
+
+    year_separation defines the way year attribute vertices are to be
+    created. I.e. the intervals in year attribute vertices. For example,
+    a year_separation of 10 will create year attribute vertices
+    for each decade spanned by the playlist.
 
     Return a tuple containing (dataset_graph, playlist_graph).
     """
@@ -138,8 +149,10 @@ def create_dataset_and_playlist_graphs_from_url(url: str) -> tuple[song_graph.So
         decade = (song.attributes['year'] // 10) * 10
         decades_spanned.add(decade)
 
-    dataset_graph = get_dataset_data.get_song_graph_from_decades(decades_spanned)
-    playlist_graph = create_song_graph_from_songs(songs, parent_graph=dataset_graph)
+    dataset_graph = get_dataset_data.get_song_graph_from_decades(decades_spanned, year_separation)
+    playlist_graph = create_song_graph_from_songs(songs,
+                                                  parent_graph=dataset_graph,
+                                                  year_separation=year_separation)
 
     return dataset_graph, playlist_graph
 
@@ -148,13 +161,31 @@ if __name__ == '__main__':
     import analyze_song_graph
     import visualize_graph
 
+    # kevin playlist
     my_url = 'https://open.spotify.com/playlist/2lBR4CNNTua6ElWknxgJWi?si=cc415d7969fe4788&nd=1'
-    ds_graph, pl_graph = create_dataset_and_playlist_graphs_from_url(my_url)
+
+    # my playlist
+    # my_url = 'https://open.spotify.com/playlist/0G8zFaLHmuke5HN1nKFbiC?si=azx8vNSPRPi70zu0Ksr0yw'
+
+    # rap jazz chill
+    # my_url = 'https://open.spotify.com/playlist/6QrU3UUxANjjstAKuGlSsK?si=VC1Q9MHWR1qQ4jyG_XhWqg'
+
+    ds_graph, pl_graph = create_dataset_and_playlist_graphs_from_url(my_url, year_separation=5)
 
     # for v in ds_graph.get_attribute_vertices():
     #     print(v.item, len(v.neighbours))
 
-    print(analyze_song_graph.get_most_significant_attributes(pl_graph))
-    graph_nx = analyze_song_graph.create_clustered_networkx_song_graph(pl_graph, 0.8)
+    graph_nx = analyze_song_graph.create_clustered_networkx_song_graph(
+        pl_graph, 0.9, ignore={'year', 'popularity'})
 
     visualize_graph.visualize_graph(graph_nx)
+
+    # print(analyze_song_graph.get_most_deviated_attribute_headers(ds_graph, 3))
+    #
+    # visualize_graph.visualize_attribute_header_distribution(pl_graph, 'instrumentalness')
+    #
+    for attribute_header in analyze_song_graph.get_most_deviated_attribute_headers(
+            pl_graph, 3, ignore={'year', 'popularity', 'explicit'}):
+        visualize_graph.visualize_attribute_header_distribution_bar(pl_graph, attribute_header)
+
+    visualize_graph.visualize_attribute_header_distribution_pie(pl_graph, 'year')
