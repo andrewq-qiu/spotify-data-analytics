@@ -54,6 +54,13 @@ class Song:
         self.spotify_id = spotify_id
         self.attributes = attributes
 
+    def is_same_song_as(self, other: Song):
+        """Return whether or self and other represent the same song."""
+        return self.spotify_id == other.spotify_id
+
+    def __str__(self):
+        return f'{self.name} by {", ".join(self.artists)}'
+
 
 class Vertex:
     """A class representing a vertex in a Graph"""
@@ -274,6 +281,10 @@ class SongGraph(Graph):
         """
         Graph.add_vertex(self, SongVertex(song))
         self.num_songs += 1
+
+    def is_song_in_graph(self, song: Song) -> bool:
+        # return song.spotify_id in self._songs_by_id
+        return any(s1.is_same_song_as(song) for s1 in self.get_songs())
 
     def _add_attribute_vertex(self, vertex: Union[AttributeVertexContinuous, AttributeVertexExact]):
         """(PRIVATE) Add an attribute vertex to the graph.

@@ -3,15 +3,59 @@ Spotify and the attributes of their songs."""
 
 from dotenv import load_dotenv
 from typing import Any, Union
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
+import requests
+import base64
+import os
+import json
 import song_graph
 from song_graph import Song
 import get_dataset_data
 
 load_dotenv('token.env')
 
-sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials())
+
+def _spotify_get_access_token():
+    url = 'https://accounts.spotify.com/api/token'
+    id_secret = os.environ.get('SPOTIPY_CLIENT_ID') + ':' + os.environ.get('SPOTIPY_CLIENT_SECRET')
+
+    headers = {
+        'Authorization': f'Basic {base64.b64encode(id_secret.encode()).decode()}'
+    }
+
+    body = {'grant_type': 'client_credentials'}
+
+    r = requests.post(url, headers=headers, data=body)
+    data = json.loads(r.text)
+
+    return data['access_token']
+
+
+def _spotify_get_playlist_items(token: str, playlist_id: str):
+    url = 'https://api.spotify.com/v1/playlists/' + playlist_id + '/tracks'
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+    }
+
+    r = requests.get(url, headers=headers)
+
+    return json.loads(r.text)
+
+
+def _spotify_get_audio_features(token: str, track_ids: list[str]):
+    url = 'https://api.spotify.com/v1/audio-features'
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+    }
+
+    params = {
+        'ids': ','.join(track_ids)
+    }
+
+    r = requests.get(url, headers=headers, params=params)
+
+    return json.loads(r.text)['audio_features']
 
 
 def get_id_from_playlist_url(url: str) -> str:
@@ -72,12 +116,14 @@ def get_songs_from_playlist_url(url: str) -> list[Song]:
     """Return a list of Song instances corresponding to the songs
     contained in a Spotify playlist url.
     """
+    token = _spotify_get_access_token()
+
     playlist_id = get_id_from_playlist_url(url)
 
-    data = sp.playlist_items(playlist_id)
+    data = _spotify_get_playlist_items(token, playlist_id)
 
     track_ids = [item['track']['id'] for item in data['items']]
-    features = sp.audio_features(track_ids)
+    features = _spotify_get_audio_features(token, track_ids)
 
     songs = []
     i = 0
@@ -162,13 +208,16 @@ if __name__ == '__main__':
     import visualize_graph
 
     # kevin playlist
-    my_url = 'https://open.spotify.com/playlist/2lBR4CNNTua6ElWknxgJWi?si=cc415d7969fe4788&nd=1'
+    # my_url = 'https://open.spotify.com/playlist/2lBR4CNNTua6ElWknxgJWi?si=cc415d7969fe4788&nd=1'
 
     # my playlist
     # my_url = 'https://open.spotify.com/playlist/0G8zFaLHmuke5HN1nKFbiC?si=azx8vNSPRPi70zu0Ksr0yw'
 
     # rap jazz chill
     # my_url = 'https://open.spotify.com/playlist/6QrU3UUxANjjstAKuGlSsK?si=VC1Q9MHWR1qQ4jyG_XhWqg'
+
+    # Spotify jazz
+    my_url = 'https://open.spotify.com/playlist/37i9dQZF1DWV7EzJMK2FUI?si=WDPkRxCqQVqSFVsQQRnXLQ'
 
     ds_graph, pl_graph = create_dataset_and_playlist_graphs_from_url(my_url, year_separation=5)
 
@@ -178,14 +227,28 @@ if __name__ == '__main__':
     graph_nx = analyze_song_graph.create_clustered_networkx_song_graph(
         pl_graph, 0.9, ignore={'year', 'popularity'})
 
+    clusters = analyze_song_graph.find_clusters(pl_graph, 'song', 'continuous', 0.9)
+
     visualize_graph.visualize_graph(graph_nx)
 
-    # print(analyze_song_graph.get_most_deviated_attribute_headers(ds_graph, 3))
-    #
-    # visualize_graph.visualize_attribute_header_distribution(pl_graph, 'instrumentalness')
-    #
+    print(analyze_song_graph.get_most_deviated_attribute_headers(ds_graph, 3))
+
+    visualize_graph.visualize_attribute_header_distribution_bar(pl_graph, 'instrumentalness')
+
     for attribute_header in analyze_song_graph.get_most_deviated_attribute_headers(
             pl_graph, 3, ignore={'year', 'popularity', 'explicit'}):
         visualize_graph.visualize_attribute_header_distribution_bar(pl_graph, attribute_header)
 
-    visualize_graph.visualize_attribute_header_distribution_pie(pl_graph, 'year')
+    # visualize_graph.visualize_attribute_header_distribution_pie(pl_graph, 'year')
+    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
+    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
+    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
+    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
+    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
+    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
+    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
+
+    # import timeit
+
+    # print(timeit.timeit('analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters)', number=10, globals=globals()))
+    # print(timeit.timeit('create_dataset_and_playlist_graphs_from_url(my_url, year_separation=5)', number=5, globals=globals()))

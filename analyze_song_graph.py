@@ -1,4 +1,5 @@
-from typing import Union, Any
+from typing import Union, Any, Optional
+import random
 import song_graph
 from song_graph import SongGraph, AttributeVertex, SongVertex, Vertex, Song
 import networkx as nx
@@ -27,7 +28,7 @@ def get_most_significant_attributes_vertices(graph: SongGraph, n: int = 5, ignor
     return to_return
 
 
-def get_song_similarity_continuous(graph: SongGraph, s1: Song, s2: Song):
+def get_song_similarity_continuous(graph: SongGraph, s1: Song, s2: Song, use_exact_headers: bool = True):
     """Return a similarity score between two songs s1 and s2.
 
     This similarity score follows a continuous algorithm, which
@@ -40,12 +41,14 @@ def get_song_similarity_continuous(graph: SongGraph, s1: Song, s2: Song):
     num_attributes = 0
 
     for attr_header in s1.attributes:
-        if attr_header in song_graph.EXACT_HEADERS:
+        if use_exact_headers and attr_header in song_graph.EXACT_HEADERS:
             # Then the similarity is:
             # 1 - If the attribute matches
             # 0 - If the attribute does not match
             net_similarity += int(s1.attributes[attr_header] == s2.attributes[attr_header])
-        else:
+
+            num_attributes += 1
+        elif use_exact_headers or attr_header not in song_graph.EXACT_HEADERS:
             # Then the similarity is based
             # on the relative distance between the
             # attribute values
@@ -54,7 +57,7 @@ def get_song_similarity_continuous(graph: SongGraph, s1: Song, s2: Song):
             # The closer they are, the more similar they should be
             net_similarity += 1 - abs(s1.attributes[attr_header] - s2.attributes[attr_header]) / (max_ - min_)
 
-        num_attributes += 1
+            num_attributes += 1
 
     return net_similarity / num_attributes
 
@@ -323,6 +326,110 @@ def get_most_deviated_attribute_headers(graph: SongGraph, n: int, ignore: set[st
             to_return.append(header)
 
     return to_return
+
+
+def get_least_deviated_attribute_headers(graph: SongGraph, n: int, ignore: set[str] = None) -> list[str]:
+    """Return the top n attribute headers of a child SongGraph
+    which deviate the least from the average of the parent SongGraph.
+    Ignore all attribute headers in ignore and do not return them.
+
+    Preconditions:
+        - graph.parent_graph is not None
+    """
+
+    attr_headers = list(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
+    attr_headers.sort(key=lambda x: get_attribute_header_deviation(graph, x))
+
+    to_return = []
+
+    for header in attr_headers:
+        if len(to_return) == n:
+            return to_return
+        elif ignore is None or header not in ignore:
+            to_return.append(header)
+
+    return to_return
+
+
+def get_cluster_representative_song(cluster: set[SongVertex]) -> Song:
+    """Return a dummy song, which contains attributes containing the
+    average attribute values over all the songs in cluster.
+
+    The attributes in the returned song contain only continuous
+    attributes and no exact attributes.
+    """
+
+    new_attributes = {}
+
+    for header in song_graph.CONTINUOUS_HEADERS:
+        total_value = 0
+
+        for song_v in cluster:
+            song = song_v.item
+            total_value += song.attributes[header]
+
+        new_attributes[header] = total_value / len(cluster)
+
+    new_song = Song(name='dummy', spotify_id='dummy',
+                    artists=[], attributes=new_attributes)
+
+    return new_song
+
+
+def get_similar_song_to_cluster(graph: SongGraph, cluster: set[SongVertex], similarity_threshold: float = 0.9) -> \
+        Optional[Song]:
+    """Return a song in graph.parent_graph whose similarity
+    score (by the continuous algorithm) is above similarity_threshold.
+
+    If no such song exists, return None
+    """
+
+    rep_song = get_cluster_representative_song(cluster)
+    songs = list(graph.get_songs())
+    # Scramble songs to get unique recommended songs
+    random.shuffle(songs)
+
+    for s1 in songs:
+
+        similarity = get_song_similarity_continuous(graph, rep_song, s1, use_exact_headers=False)
+
+        if similarity > similarity_threshold:
+            return s1
+
+    return None
+
+
+def get_recommended_song_for_cluster(graph: SongGraph, cluster: set[SongVertex]):
+    """If no recommended song exists, raise a ValueError"""
+    similarity_threshold = 0.95
+    song = None
+
+    while song is None and similarity_threshold >= 0 or graph.is_song_in_graph(song):
+        song = get_similar_song_to_cluster(graph.parent_graph, cluster, similarity_threshold)
+        similarity_threshold -= 0.05
+
+    if song is not None:
+        return song
+    else:
+        raise ValueError
+
+
+def get_recommended_song_for_playlist(pl_graph: SongGraph, clusters: list[set[SongVertex]]):
+    """"""
+    num_songs = len([pl_graph.get_songs()])
+
+    cluster_weights = [((len(cluster) / num_songs) + 1) ** 2 for cluster in clusters]
+
+    chosen_cluster = random.choices(
+        population=clusters,
+        weights=cluster_weights,
+        k=1
+    )[0]
+
+    return get_recommended_song_for_cluster(pl_graph, chosen_cluster)
+
+
+
 
 
 
