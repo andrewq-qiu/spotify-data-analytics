@@ -50,8 +50,8 @@ DEFAULT_PLAYLISTS = {
                                       'DWV7EzJMK2FUI?si=nC7MSsBlTqqOas9sX_XZlw',
     'Hot Hits Canada': 'https://open.spotify.com/playlist/37i9dQZ'
                        'F1DWXT8uSSn6PRy?si=GB2-0gBrT0GYnVrFKWSeLA',
-    'Rap Hits': 'https://open.spotify.com/playlist/5x4vTYH7dI'
-                                          'Z2A4tviBajlk?si=PZoAJa49QAiE8KA-JVbYDA',
+    'Rap Hits': 'https://open.spotify.com/playlist/1HDS'
+                '5MxpQEMvZVBl2QAqzC?si=0qH45RTUQUyJEBM8WpMELw',
     'This is Taylor Swift': 'https://open.spotify.com/playlist/37i9d'
                             'QZF1DX5KpP2LN299J?si=a9gwrnj_Q9uXVS124zVXQw'
 }
