@@ -2,6 +2,7 @@
 requests~=2.25.1
 # For the GUI
 PyQt5~=5.15.4
+PyQtWebEngine~=5.15.4
 # For the playback of songs
 pygame~=2.0.1
 # For accessing the API access credentials as environmental variables

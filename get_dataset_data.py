@@ -48,7 +48,7 @@ def load_song_from_row(row: list[str]) -> Song:
 
     # Create a dictionary for all other attributes
     for i in range(len(row)):
-        if i != 12 and i != 6 and i != 1:
+        if i not in {12, 6, 1}:
             # Then this row entry should be an attribute
 
             # The attribute name
