@@ -1,52 +1,167 @@
-"""Module for retrieving a public playlist from
-Spotify and the attributes of their songs."""
+"""Module for interacting with the Spotify API to
+retrieve playlist and song information.
 
-from dotenv import load_dotenv
-from typing import Any, Union
-import requests
+This module relies on the environmental variables
+SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET for authorization
+to access the Spotify API.
+
+MIT License
+
+Copyright (c) 2021 Andrew Qiu
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+from typing import Any, Union, Optional
+import time
 import base64
 import os
 import json
+import requests
 import song_graph
 from song_graph import Song
 import get_dataset_data
 
-load_dotenv('token.env')
+
+DEFAULT_PLAYLISTS = {
+    'My Playlist': 'https://open.spotify.com/playlist/37i9dQZF1E37NlLG'
+                   '3OEVtr?si=wGLNP1faSz--_52wf87H_A',
+    "Kevin's Playlist": 'https://open.spotify.com/playlist/2lBR4CNNTu'
+                        'a6ElWknxgJWi?si=cc415d7969fe4788&nd=1',
+    'Spotify Rap Jazz and Chill': 'https://open.spotify.com/playlist/6QrU3'
+                                  'UUxANjjstAKuGlSsK?si=-EPeSOLYQFi6eWzPFP3nYA',
+    'Spotify Jazz in the Background': 'https://open.spotify.com/playlist/37i9dQZF1'
+                                      'DWV7EzJMK2FUI?si=nC7MSsBlTqqOas9sX_XZlw',
+    'Hot Hits Canada': 'https://open.spotify.com/playlist/37i9dQZ'
+                       'F1DWXT8uSSn6PRy?si=GB2-0gBrT0GYnVrFKWSeLA',
+    'Rap 2021 | Hip Hop & Rap Hits 2021': 'https://open.spotify.com/playlist/5x4vTYH7dI'
+                                          'Z2A4tviBajlk?si=PZoAJa49QAiE8KA-JVbYDA'
+}
 
 
-def _spotify_get_access_token():
-    url = 'https://accounts.spotify.com/api/token'
-    id_secret = os.environ.get('SPOTIPY_CLIENT_ID') + ':' + os.environ.get('SPOTIPY_CLIENT_SECRET')
-
-    headers = {
-        'Authorization': f'Basic {base64.b64encode(id_secret.encode()).decode()}'
-    }
-
-    body = {'grant_type': 'client_credentials'}
-
-    r = requests.post(url, headers=headers, data=body)
-    data = json.loads(r.text)
-
-    return data['access_token']
+class ApiInteractError(Exception):
+    """Raised when there was an issue interacting with the
+    Spotify API. This may be the result of invalid parameters,
+    invalid authentication, or any issue relating to the Spotify API."""
 
 
-def _spotify_get_playlist_items(token: str, playlist_id: str):
+class SpotifyTokenManager:
+    """A class that handles Spotify API tokens
+    and regenerates them when needed.
+
+    Instance Attributes:
+        - last_request_time: the last time since the token was refreshed
+                             expressed as seconds after epoch in UTC
+        - expiry_time: the amount of seconds until the token expires
+                       since the last_request_time
+    """
+    last_request_time: float
+    expiry_time: int
+
+    # Private Instance Attributes:
+    #   - _token: the current unexpired token
+
+    _token: Optional[str]
+
+    def __init__(self) -> None:
+        """Initialize a spotify token manager."""
+
+        self.last_request_time = 0.0
+        self.expiry_time = 0
+        self._token = None
+
+    def _refresh_token(self) -> None:
+        """Interact with the Spotify API to generate
+        a new token. Raise an ApiInteractError if
+        this interaction is unsuccessful.
+        """
+
+        url = 'https://accounts.spotify.com/api/token'
+        id_secret = os.environ.get(
+            'SPOTIFY_CLIENT_ID') + ':' + os.environ.get('SPOTIFY_CLIENT_SECRET')
+
+        headers = {
+            'Authorization': f'Basic {base64.b64encode(id_secret.encode()).decode()}'
+        }
+
+        body = {'grant_type': 'client_credentials'}
+
+        r = requests.post(url, headers=headers, data=body)
+
+        if r.status_code != 200:
+            raise ApiInteractError
+
+        data = json.loads(r.text)
+
+        self._token = data['access_token']
+        self.last_request_time = time.time()
+        self.expiry_time = int(data['expires_in'])
+
+    def get_token(self) -> None:
+        """Return an unexpired Spotify API Token."""
+
+        # Time since last call in seconds
+        now = time.time()
+        time_since_last_call = now - self.last_request_time
+
+        # Add a second buffer to token expiry
+        if time_since_last_call > self.expiry_time - 5:
+            # Then the token has expired or is close
+            # enough to expiring.
+            self._refresh_token()
+            return self._token
+        else:
+            return self._token
+
+
+def _spotify_get_playlist_items(token_manager: SpotifyTokenManager, playlist_id: str) -> dict:
+    """Interact with the Spotify API and return a dictionary
+    containing the items of a playlist given a playlist id.
+
+    Raise an ApiInteractError if this interaction was unsuccessful.
+    """
+
     url = 'https://api.spotify.com/v1/playlists/' + playlist_id + '/tracks'
 
     headers = {
-        'Authorization': f'Bearer {token}',
+        'Authorization': f'Bearer {token_manager.get_token()}'
     }
 
     r = requests.get(url, headers=headers)
 
+    if r.status_code != 200:
+        raise ApiInteractError
+
     return json.loads(r.text)
 
 
-def _spotify_get_audio_features(token: str, track_ids: list[str]):
+def _spotify_get_audio_features(token_manager: SpotifyTokenManager, track_ids: list[str]) -> list:
+    """Interact with the Spotify API and return a list containing
+    the audio features for each track in track_ids.
+
+    Raise an ApiInteractError if this interaction was unsuccessful.
+    """
+
     url = 'https://api.spotify.com/v1/audio-features'
 
     headers = {
-        'Authorization': f'Bearer {token}',
+        'Authorization': f'Bearer {token_manager.get_token()}'
     }
 
     params = {
@@ -55,14 +170,105 @@ def _spotify_get_audio_features(token: str, track_ids: list[str]):
 
     r = requests.get(url, headers=headers, params=params)
 
+    if r.status_code != 200:
+        raise ApiInteractError
+
     return json.loads(r.text)['audio_features']
 
 
-def get_id_from_playlist_url(url: str) -> str:
+def _spotify_get_playlist_info(token_manager: SpotifyTokenManager, playlist_id: str) -> dict:
+    """Interact with the Spotify API and return a dictionary
+    containing information about a playlist given a playlist_id.
+
+    Raise an ApiInteractError if this interaction was unsuccessful.
     """
 
-    Preconditions:
-        - the url is in the following format: TODO
+    url = 'https://api.spotify.com/v1/playlists/' + playlist_id
+
+    headers = {
+        'Authorization': f'Bearer {token_manager.get_token()}'
+    }
+
+    r = requests.get(url, headers=headers)
+
+    if r.status_code != 200:
+        raise ApiInteractError
+
+    return json.loads(r.text)
+
+
+def _spotify_get_several_songs_info(
+        token_manager: SpotifyTokenManager, track_ids: list[str]) -> dict:
+    """Interact with the Spotify API and return a list containing
+    the song information for each track in track_ids.
+
+    Raise an ApiInteractError if this interaction was unsuccessful.
+    """
+
+    url = 'https://api.spotify.com/v1/tracks/'
+
+    headers = {
+        'Authorization': f'Bearer {token_manager.get_token()}'
+    }
+
+    params = {
+        'ids': ','.join(track_ids)
+    }
+
+    r = requests.get(url, headers=headers, params=params)
+
+    if r.status_code != 200:
+        raise ApiInteractError
+
+    return json.loads(r.text)
+
+
+def get_playlist_info_from_url(
+        token_manager: SpotifyTokenManager, playlist_url: str) -> dict[str, str]:
+    """Return a dictionary containing the name, cover_url, and author
+    of a playlist given a playlist_url using the Spotify API.
+
+    Raise an ApiInteractError if the API interaction was unsuccessful.
+    """
+
+    playlist_id = get_id_from_playlist_url(playlist_url)
+
+    data = _spotify_get_playlist_info(token_manager, playlist_id)
+
+    to_return = {
+        'name': data['name'],
+        'cover_url': data['images'][0]['url'],
+        'author': data['owner']['display_name']
+    }
+
+    return to_return
+
+
+def get_song_covers_and_samples(
+        token_manager: SpotifyTokenManager, songs: list[Song]) -> list[tuple[str, str]]:
+    """Return a list of tuples for each song in songs.
+    Each tuple contains the cover url and preview url of the song.
+
+    Raise an ApiInteractError if the API interaction was unsuccessful.
+    """
+
+    track_ids = [song.spotify_id for song in songs]
+
+    data = _spotify_get_several_songs_info(token_manager, track_ids)
+
+    to_return = []
+
+    for track in data['tracks']:
+        to_return.append((track['album']['images'][0]['url'], track['preview_url']))
+
+    return to_return
+
+
+def get_id_from_playlist_url(url: str) -> str:
+    """Return the playlist id of a Spotify playlist given
+    a Spotify playlist url.
+
+    Raise a ValueError if no such id can be found.
 
     >>> get_id_from_playlist_url('https://open.spotify.com/playlist/37i9dQZF1DWXT8uSSn6PRy?si=UutGRn1YR3CGl1Tw8WhHpQ')
     '37i9dQZF1DWXT8uSSn6PRy'
@@ -79,19 +285,19 @@ def get_id_from_playlist_url(url: str) -> str:
         return to_return
 
 
-def convert_spotify_attributes_to_song_attributes(
+def spotify_features_to_song_attr(
         audio_features: dict[str, Any], track_info: dict) -> dict[str, Union[float, int]]:
     """Return a dictionary of attributes compatible with the
     Song class from a dictionary of audio features and track (song)
     information from the Spotify API.
 
     Ensure that the attributes of the returned dict have the correct typing according
-    to song_graph.HEADERS, song_graph.INT_HEADERS, and song_graph.FLOAT_HEADERS.
+    to song_graph.INT_HEADERS, and song_graph.FLOAT_HEADERS.
 
     Preconditions:
-        - 'explicit' in song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS)
-        - 'year' in song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS)
-        - 'popularity' in song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS)
+        - 'explicit' in song_graph.INT_HEADERS
+        - 'year' in song_graph.INT_HEADERS
+        - 'popularity' in song_graph.INT_HEADERS
     """
 
     to_return = {}
@@ -112,18 +318,21 @@ def convert_spotify_attributes_to_song_attributes(
     return to_return
 
 
-def get_songs_from_playlist_url(url: str) -> list[Song]:
+def get_songs_from_playlist_url(
+        token_manager: SpotifyTokenManager, playlist_url: str) -> list[Song]:
     """Return a list of Song instances corresponding to the songs
     contained in a Spotify playlist url.
+
+    Raise an ApiInteractError if there any issues with the
+    interaction with the Spotify API.
     """
-    token = _spotify_get_access_token()
 
-    playlist_id = get_id_from_playlist_url(url)
+    playlist_id = get_id_from_playlist_url(playlist_url)
 
-    data = _spotify_get_playlist_items(token, playlist_id)
+    data = _spotify_get_playlist_items(token_manager, playlist_id)
 
-    track_ids = [item['track']['id'] for item in data['items']]
-    features = _spotify_get_audio_features(token, track_ids)
+    track_ids = [itm['track']['id'] for itm in data['items']]
+    features = _spotify_get_audio_features(token_manager, track_ids)
 
     songs = []
     i = 0
@@ -133,7 +342,7 @@ def get_songs_from_playlist_url(url: str) -> list[Song]:
         artists = [artist['name'] for artist in item['track']['artists']]
         spotify_id = item['track']['id']
 
-        attributes = convert_spotify_attributes_to_song_attributes(features[i], item['track'])
+        attributes = spotify_features_to_song_attr(features[i], item['track'])
         songs.append(Song(name, spotify_id, artists, attributes))
 
         i += 1
@@ -155,7 +364,7 @@ def create_song_graph_from_songs(songs: list[Song],
 
     Preconditions:
         - parent_graph is None or parent_graph.are_attributes_created()
-            # parent_graph is not None implies parent_graph.are_attributes_created()
+        # parent_graph is not None implies parent_graph.are_attributes_created()
     """
 
     graph = song_graph.SongGraph(parent_graph)
@@ -171,7 +380,9 @@ def create_song_graph_from_songs(songs: list[Song],
     return graph
 
 
-def create_dataset_and_playlist_graphs_from_url(url: str, year_separation: int = 10) -> tuple[song_graph.SongGraph, song_graph.SongGraph]:
+def get_ds_and_pl_graphs_from_url(
+        token_manager: SpotifyTokenManager, playlist_url: str, year_separation: int = 10) ->\
+        tuple[song_graph.SongGraph, song_graph.SongGraph]:
     """From a Spotify playlist URL, load relevant songs
     from the Spotify dataset in the decades of songs spanned by the playlist.
     Store these songs in a song graph.
@@ -187,7 +398,7 @@ def create_dataset_and_playlist_graphs_from_url(url: str, year_separation: int =
     Return a tuple containing (dataset_graph, playlist_graph).
     """
 
-    songs = get_songs_from_playlist_url(url)
+    songs = get_songs_from_playlist_url(token_manager, playlist_url)
 
     decades_spanned = set()
     for song in songs:
@@ -204,51 +415,18 @@ def create_dataset_and_playlist_graphs_from_url(url: str, year_separation: int =
 
 
 if __name__ == '__main__':
-    import analyze_song_graph
-    import visualize_graph
+    import doctest
+    import python_ta
+    import python_ta.contracts
 
-    # kevin playlist
-    # my_url = 'https://open.spotify.com/playlist/2lBR4CNNTua6ElWknxgJWi?si=cc415d7969fe4788&nd=1'
+    doctest.testmod()
 
-    # my playlist
-    # my_url = 'https://open.spotify.com/playlist/0G8zFaLHmuke5HN1nKFbiC?si=azx8vNSPRPi70zu0Ksr0yw'
+    python_ta.contracts.check_all_contracts()
 
-    # rap jazz chill
-    # my_url = 'https://open.spotify.com/playlist/6QrU3UUxANjjstAKuGlSsK?si=VC1Q9MHWR1qQ4jyG_XhWqg'
-
-    # Spotify jazz
-    my_url = 'https://open.spotify.com/playlist/37i9dQZF1DWV7EzJMK2FUI?si=WDPkRxCqQVqSFVsQQRnXLQ'
-
-    ds_graph, pl_graph = create_dataset_and_playlist_graphs_from_url(my_url, year_separation=5)
-
-    # for v in ds_graph.get_attribute_vertices():
-    #     print(v.item, len(v.neighbours))
-
-    graph_nx = analyze_song_graph.create_clustered_networkx_song_graph(
-        pl_graph, 0.9, ignore={'year', 'popularity'})
-
-    clusters = analyze_song_graph.find_clusters(pl_graph, 'song', 'continuous', 0.9)
-
-    visualize_graph.visualize_graph(graph_nx)
-
-    print(analyze_song_graph.get_most_deviated_attribute_headers(ds_graph, 3))
-
-    visualize_graph.visualize_attribute_header_distribution_bar(pl_graph, 'instrumentalness')
-
-    for attribute_header in analyze_song_graph.get_most_deviated_attribute_headers(
-            pl_graph, 3, ignore={'year', 'popularity', 'explicit'}):
-        visualize_graph.visualize_attribute_header_distribution_bar(pl_graph, attribute_header)
-
-    # visualize_graph.visualize_attribute_header_distribution_pie(pl_graph, 'year')
-    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
-    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
-    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
-    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
-    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
-    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
-    print(analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters))
-
-    # import timeit
-
-    # print(timeit.timeit('analyze_song_graph.get_recommended_song_for_playlist(pl_graph, clusters)', number=10, globals=globals()))
-    # print(timeit.timeit('create_dataset_and_playlist_graphs_from_url(my_url, year_separation=5)', number=5, globals=globals()))
+    python_ta.check_all(config={
+        'extra-imports': ['typing', 'time', 'requests', 'base64', 'os',
+                          'json', 'song_graph', 'get_dataset_data'],
+        'allowed-io': [],
+        'max-line-length': 100,
+        'disable': ['E1136']
+    })

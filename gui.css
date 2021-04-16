@@ -1,0 +1,59 @@
+QLabel{
+}
+
+Heading{
+    font-size: 30px;
+    height: 100px;
+}
+
+SubHeading{
+    font-size: 20px;
+}
+
+NormalText{
+    font-size: 16px;
+}
+
+SmallText{
+    font-size: 14px;
+}
+
+PlaylistEntryWidget{
+    margin-left: 10px;
+}
+
+Container{
+    background-color: white;
+}
+
+QMainWindow{
+    width: 1000px;
+    height: 400px;
+    padding: 100px;
+    background-color: white;
+}
+
+QScrollArea{
+    background-color: white;
+}
+
+QWebEngineView{
+    border: 1px solid black;
+}
+
+PlayPauseButton{
+    background-color: white;
+    border: 0px;
+}
+
+PlayPauseButton[state="play"]{
+    background-image: url('images/pause.png');
+}
+
+PlayPauseButton[state="paused"]{
+    background-image: url('images/play.png');
+}
+
+QWidget[state="legend"]{
+    background-image: url('images/legend.png');
+}

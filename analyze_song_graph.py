@@ -1,40 +1,49 @@
+"""A module containing functions for analyzing a
+song graph and for retrieving interesting information
+about them.
+
+MIT License
+
+Copyright (c) 2021 Andrew Qiu
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
 from typing import Union, Any, Optional
 import random
-import song_graph
-from song_graph import SongGraph, AttributeVertex, SongVertex, Vertex, Song
 import networkx as nx
+import song_graph
+from song_graph import SongGraph, AttributeVertex,\
+    SongVertex, Vertex, Song, AttributeVertexContinuous
 
 
-def get_most_significant_attributes_vertices(graph: SongGraph, n: int = 5, ignore: set[str] = None) -> \
-        list[AttributeVertex]:
-    """Return the n most significant attribute vertices in the song graph
-    ignoring all attribute vertices with attribute header in ignore.
-
-    Preconditions:
-        - song_graph.are_attributes_created()
-    """
-
-    attr_vertices = list(graph.get_attribute_vertices())
-    attr_vertices.sort(key=lambda x: len(x.neighbours), reverse=True)
-
-    to_return = []
-
-    for attr_v in attr_vertices:
-        if len(to_return) >= n:
-            return to_return
-        elif ignore is None or attr_v.attribute_header not in ignore:
-            to_return.append(attr_v)
-
-    return to_return
-
-
-def get_song_similarity_continuous(graph: SongGraph, s1: Song, s2: Song, use_exact_headers: bool = True):
+def song_similarity_continuous(graph: SongGraph, s1: Song, s2: Song,
+                               use_exact_headers: bool = True) -> float:
     """Return a similarity score between two songs s1 and s2.
 
     This similarity score follows a continuous algorithm, which
     means that two songs will have a higher similarity score if
     their attributes are close together, rather them being exactly
-    in the same range (which is what is used in get_vertex_similarity)
+    in the same range (which is what is used in get_vertex_similarity).
+
+    Preconditions:
+        - graph.num_songs >= 1
     """
 
     net_similarity = 0
@@ -48,21 +57,23 @@ def get_song_similarity_continuous(graph: SongGraph, s1: Song, s2: Song, use_exa
             net_similarity += int(s1.attributes[attr_header] == s2.attributes[attr_header])
 
             num_attributes += 1
-        elif use_exact_headers or attr_header not in song_graph.EXACT_HEADERS:
+        elif attr_header not in song_graph.EXACT_HEADERS:
             # Then the similarity is based
             # on the relative distance between the
             # attribute values
-            min_, max_, avg, _ = graph.get_attribute_header_stats(attr_header, use_parent=True)
+            min_, max_, _, _ = graph.get_attribute_header_stats(attr_header, use_parent=True)
 
             # The closer they are, the more similar they should be
-            net_similarity += 1 - abs(s1.attributes[attr_header] - s2.attributes[attr_header]) / (max_ - min_)
+            closeness = abs(s1.attributes[attr_header] - s2.attributes[attr_header]) / (max_ - min_)
+
+            net_similarity += 1 - closeness
 
             num_attributes += 1
 
     return net_similarity / num_attributes
 
 
-def get_vertex_similarity(v1: Vertex, v2: Vertex):
+def vertex_sim_by_neighbours(v1: Vertex, v2: Vertex) -> float:
     """Return a similarity score between v1 and v2.
 
     The similarity score is calculated with the following formula:
@@ -71,6 +82,9 @@ def get_vertex_similarity(v1: Vertex, v2: Vertex):
         Otherwise, it is equal to the number of length two paths
         between v1 and v2 (number of shared neighbours) divided
         by the number of distinct neighbours of v1 and v2.
+
+    This metric essentially measures how many neighbours
+    these two vertices share.
     """
 
     shared = len(v1.neighbours.intersection(v2.neighbours))
@@ -82,8 +96,8 @@ def get_vertex_similarity(v1: Vertex, v2: Vertex):
         return shared / distinct
 
 
-def get_cluster_similarity(graph: SongGraph, cluster1: set[Vertex], cluster2: set[Vertex],
-                           similarity_algorithm: str = 'continuous'):
+def cluster_similarity(graph: SongGraph, cluster1: set[Vertex], cluster2: set[Vertex],
+                       similarity_algorithm: str = 'continuous') -> float:
     """Find the similarity between two clusters.
     The similarity of the two clusters is the average similarity
     between any two pairs of vertices in the two clusters.
@@ -92,12 +106,13 @@ def get_cluster_similarity(graph: SongGraph, cluster1: set[Vertex], cluster2: se
     Note that this only applies to a vertex of type 'song' as the continuous
     similarity algorithm requires attributes that only song vertices have.
 
-    Raise an AssertionError if similarity_algorithm='continuous' is passed
-    and a vertex in any of the two clusters is not a SongVertex.
-
     Preconditions:
         - len(cluster1) > 0 and len(cluster2) > 0
+        - graph.are_attributes_created()
         - cluster1.isdisjoint(cluster2)
+        - similarity_algorithm in {'continuous', 'neighbours'}
+        - similarity_algorithm == 'neighbours' or \
+            all(isinstance(v, SongVertex) for v in cluster1.union(cluster2))
     """
 
     total_similarity = 0
@@ -105,10 +120,9 @@ def get_cluster_similarity(graph: SongGraph, cluster1: set[Vertex], cluster2: se
     for v in cluster1:
         for u in cluster2:
             if similarity_algorithm == 'continuous':
-                assert isinstance(v, SongVertex) and isinstance(v, SongVertex)
-                total_similarity += get_song_similarity_continuous(graph, v.item, u.item)
+                total_similarity += song_similarity_continuous(graph, v.item, u.item)
             else:
-                total_similarity += get_vertex_similarity(v, u)
+                total_similarity += vertex_sim_by_neighbours(v, u)
 
     return total_similarity / (len(cluster1) * len(cluster2))
 
@@ -125,8 +139,10 @@ def get_pairs(lst: list) -> tuple[Any, Any]:
             yield lst[i], lst[j]
 
 
-def find_clusters(graph: SongGraph, vertex_type: str = 'song', similarity_algorithm: str = 'continuous',
-                  similarity_threshold: float = 0.75) -> list[set[Union[AttributeVertex, SongVertex]]]:
+def find_clusters(graph: SongGraph, vertex_type: str = 'song',
+                  similarity_algorithm: str = 'continuous',
+                  similarity_threshold: float = 0.9) ->\
+        list[set[Union[AttributeVertex, SongVertex]]]:
     """Find clusters in a song graph. This function uses an altered
     greedy clustering algorithm and instead maintains that the only clusters
     that should be merged together are those which are "similar enough".
@@ -144,7 +160,10 @@ def find_clusters(graph: SongGraph, vertex_type: str = 'song', similarity_algori
 
     Preconditions:
         - vertex_type in {'song', 'attribute'}
+        - similarity_algorithm in {'continuous', 'neighbours'}
         - 0 <= similarity_threshold <= 1
+        - graph.are_attributes_created()
+        - similarity_algorithm != 'continuous' or vertex_type == 'song'
     """
     if vertex_type == 'song':
         clusters = [{graph.get_vertex_by_item(song)} for song in graph.get_songs()]
@@ -158,7 +177,7 @@ def find_clusters(graph: SongGraph, vertex_type: str = 'song', similarity_algori
         max_similarity = 0
 
         for c1, c2 in get_pairs(clusters):
-            similarity = get_cluster_similarity(graph, c1, c2, similarity_algorithm)
+            similarity = cluster_similarity(graph, c1, c2, similarity_algorithm)
 
             if similarity > max_similarity:
                 max_similarity_pair = c1, c2
@@ -172,35 +191,70 @@ def find_clusters(graph: SongGraph, vertex_type: str = 'song', similarity_algori
     return clusters
 
 
-def get_top_attributes_from_song_cluster(graph: SongGraph,
-                                         cluster: set[SongVertex],
-                                         n: int = 3,
-                                         ignore: set[str] = None) -> list[AttributeVertex]:
-    """Return the top n attributes of the song cluster ignoring
-    all attribute headers contained in ignore.
+def attr_significance_of_cluster(
+        graph: SongGraph, cluster: set[SongVertex], attr_v: AttributeVertex) -> float:
+    """Return a significance score of an attribute vertex in a song cluster.
 
-    (i.e.) the attribute with the most edges to songs in the cluster.
+    The significance score is a measure of the changes in the
+    relative weight of an attribute (the amount of neighbours it has
+    compared to other attributes of the same header) between
+    that of the graph and that of the cluster.
+
+    I.e. the significance score will be higher if a higher proportion
+    of songs in the cluster match with attr_v than the proportion of
+    songs in graph which match with attr_v.
+
+    Preconditions:
+        - graph.are_attributes_created()
     """
 
-    attribute_vertices = list(graph.get_attribute_vertices())
+    graph_weight = len(attr_v.neighbours) / graph.num_songs
+
+    num_songs_with_attribute = 0
+
+    for song_v in cluster:
+        if attr_v in song_v.neighbours:
+            num_songs_with_attribute += 1
+
+    cluster_weight = num_songs_with_attribute / len(cluster)
+
+    if graph_weight == 0:
+        return 0
+    else:
+        return cluster_weight / graph_weight
+
+
+def top_attr_from_song_cluster(graph: SongGraph,
+                               cluster: set[SongVertex],
+                               n: int = 3,
+                               ignore: set[str] = None) -> list[AttributeVertex]:
+    """Return the top n attributes of the song cluster ignoring
+    all attribute headers contained in ignore. The top n attributes
+    are determined by their significance score defined in
+    get_attribute_significance_score_of_cluster.
+
+    Preconditions:
+        - ignore is None or ignore.issubset(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
+        - graph.are_attributes_created()
+        - n > 0
+    """
+
+    if ignore is None:
+        attribute_vertices = list(graph.get_attribute_vertices())
+    else:
+        attribute_vertices = [attr_v for attr_v in graph.get_attribute_vertices()
+                              if attr_v.attribute_header not in ignore]
+
     attribute_vertices.sort(
-        key=lambda x: len([0 for v in x.neighbours if v in cluster]),
+        key=lambda x: attr_significance_of_cluster(graph, cluster, x),
         reverse=True)
 
-    to_return = []
-
-    for attr_v in attribute_vertices:
-        if len(to_return) == n:
-            return to_return
-        elif ignore is None or attr_v.attribute_header not in ignore:
-            to_return.append(attr_v)
-
-    return to_return
+    return attribute_vertices[:n]
 
 
-def add_top_attribute_vertices_to_song_cluster(graph: SongGraph, graph_nx: nx.Graph,
-                                               cluster: set[SongVertex], added_count: dict[str, int],
-                                               ignore: set[str] = None):
+def add_top_attr_v_to_cluster(graph: SongGraph, graph_nx: nx.Graph,
+                              cluster: set[SongVertex], added_count: dict[str, int],
+                              ignore: set[str] = None) -> None:
     """Add the top three attribute vertices of the song cluster to a
     graph_nx graph such that the attribute headers of the vertices
     are not in ignore. Retrieve these attribute vertices
@@ -213,14 +267,16 @@ def add_top_attribute_vertices_to_song_cluster(graph: SongGraph, graph_nx: nx.Gr
     the number of times it has already been added to the graph
     (from other clusters).
 
-    Update added_count with any attribute_vertices which have
+    Update added_count with any attribute vertices which have
     been added to graph_nx.
 
     Preconditions:
         - all(song_v in graph_nx.nodes for song_v in cluster)
+        - graph.are_attributes_created()
+        - ignore is None or ignore.issubset(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
     """
 
-    top_attributes = get_top_attributes_from_song_cluster(graph, cluster, 3, ignore)
+    top_attributes = top_attr_from_song_cluster(graph, cluster, 3, ignore)
     for attr in top_attributes:
         # Add a number to the end of the attributes to differentiate
         # the top attributes of one cluster to another if they are
@@ -247,21 +303,24 @@ def add_top_attribute_vertices_to_song_cluster(graph: SongGraph, graph_nx: nx.Gr
             graph_nx.add_edge(song_name, added_vertex_label)
 
 
-def create_clustered_networkx_song_graph(graph: SongGraph, similarity_threshold: float = 0.75,
-                                         ignore: set[str] = None):
+def create_clustered_nx_song_graph(graph: SongGraph, similarity_threshold: float = 0.9,
+                                   ignore: set[str] = None) -> nx.Graph:
     """Return a focused networkx song graph based on the
     songs in the song graph.
 
     Create clusters and join song vertices in the same cluster
-    with an edge given a similarity_threshold (see find_clusters).
+    with an edge given the similarity between songs.
+    (see find_clusters)
 
-    For each song cluster with 5 or more songs, create 2
-    attribute vertices for the top 2 attributes of the song cluster
+    For each song cluster with 5 or more songs, create 3
+    attribute vertices for the top 3 attributes of the song cluster
     (whose attribute headers are not in ignore) and create an edge
     between each of the attribute vertices and each of the song vertices.
 
     Preconditions:
         - 0 <= similarity_threshold <= 1
+        - graph.are_attributes_created()
+        - ignore is None or ignore.issubset(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
     """
 
     clusters = find_clusters(graph, vertex_type='song',
@@ -269,7 +328,7 @@ def create_clustered_networkx_song_graph(graph: SongGraph, similarity_threshold:
     graph_nx = nx.Graph()
 
     for song in graph.get_songs():
-        graph_nx.add_node(song.name, kind='song')
+        graph_nx.add_node(song.name, kind='song', song=song)
 
     # The number of times an attribute has been added to graph_nx
     added_count = {}
@@ -282,12 +341,12 @@ def create_clustered_networkx_song_graph(graph: SongGraph, similarity_threshold:
 
         # Get top three attributes for large enough clusters
         if len(cluster) >= 5:
-            add_top_attribute_vertices_to_song_cluster(graph, graph_nx, cluster, added_count, ignore)
+            add_top_attr_v_to_cluster(graph, graph_nx, cluster, added_count, ignore)
 
     return graph_nx
 
 
-def get_attribute_header_deviation(graph: SongGraph, attribute_header: str) -> float:
+def attribute_header_deviation(graph: SongGraph, attribute_header: str) -> float:
     """Return the deviation score with an attribute header between
     a child graph and its parent graph.
 
@@ -298,6 +357,9 @@ def get_attribute_header_deviation(graph: SongGraph, attribute_header: str) -> f
 
     Preconditions:
         - attribute_header in song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
+        - graph.are_attributes_created()
+        - graph.parent_graph is not None
+        - graph.parent_graph.are_attributes_created()
     """
     _, _, p_average, st_dev = graph.get_attribute_header_stats(attribute_header, use_parent=True)
     _, _, c_average, _ = graph.get_attribute_header_stats(attribute_header)
@@ -305,58 +367,61 @@ def get_attribute_header_deviation(graph: SongGraph, attribute_header: str) -> f
     return abs(c_average - p_average) / st_dev
 
 
-def get_most_deviated_attribute_headers(graph: SongGraph, n: int, ignore: set[str] = None) -> list[str]:
+def most_deviated_attr_headers(graph: SongGraph, n: int, ignore: set[str] = None) -> list[str]:
     """Return the top n attribute headers of a child SongGraph
     which deviate the most from the average of the parent SongGraph.
     Ignore all attribute headers in ignore and do not return them.
 
     Preconditions:
+        - graph.are_attributes_created()
         - graph.parent_graph is not None
+        - graph.parent_graph.are_attributes_created()
+        - ignore is None or ignore.issubset(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
     """
 
-    attr_headers = list(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
-    attr_headers.sort(key=lambda x: get_attribute_header_deviation(graph, x), reverse=True)
+    if ignore is None:
+        attr_headers = list(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
+    else:
+        attr_headers = [header for header in song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS)
+                        if header not in ignore]
 
-    to_return = []
+    attr_headers.sort(key=lambda x: attribute_header_deviation(graph, x), reverse=True)
 
-    for header in attr_headers:
-        if len(to_return) == n:
-            return to_return
-        elif ignore is None or header not in ignore:
-            to_return.append(header)
-
-    return to_return
+    return attr_headers[:n]
 
 
-def get_least_deviated_attribute_headers(graph: SongGraph, n: int, ignore: set[str] = None) -> list[str]:
+def least_deviated_attr_headers(graph: SongGraph, n: int, ignore: set[str] = None) -> list[str]:
     """Return the top n attribute headers of a child SongGraph
     which deviate the least from the average of the parent SongGraph.
     Ignore all attribute headers in ignore and do not return them.
 
     Preconditions:
+        - graph.are_attributes_created()
         - graph.parent_graph is not None
+        - graph.parent_graph.are_attributes_created()
+        - ignore is None or ignore.issubset(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
     """
 
-    attr_headers = list(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
-    attr_headers.sort(key=lambda x: get_attribute_header_deviation(graph, x))
+    if ignore is None:
+        attr_headers = list(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
+    else:
+        attr_headers = [header for header in song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS)
+                        if header not in ignore]
 
-    to_return = []
+    attr_headers.sort(key=lambda x: attribute_header_deviation(graph, x))
 
-    for header in attr_headers:
-        if len(to_return) == n:
-            return to_return
-        elif ignore is None or header not in ignore:
-            to_return.append(header)
-
-    return to_return
+    return attr_headers[:n]
 
 
-def get_cluster_representative_song(cluster: set[SongVertex]) -> Song:
+def get_cluster_average_song(cluster: set[SongVertex]) -> Song:
     """Return a dummy song, which contains attributes containing the
     average attribute values over all the songs in cluster.
 
     The attributes in the returned song contain only continuous
     attributes and no exact attributes.
+
+    Preconditions:
+        - len(cluster) > 0
     """
 
     new_attributes = {}
@@ -376,36 +441,184 @@ def get_cluster_representative_song(cluster: set[SongVertex]) -> Song:
     return new_song
 
 
-def get_similar_song_to_cluster(graph: SongGraph, cluster: set[SongVertex], similarity_threshold: float = 0.9) -> \
-        Optional[Song]:
-    """Return a song in graph.parent_graph whose similarity
-    score (by the continuous algorithm) is above similarity_threshold.
+def cluster_attr_distr_by_header(graph: SongGraph, cluster: set[SongVertex],
+                                 attribute_header: str) -> dict[str, float]:
+    """Return a dictionary mapping quantifiers of the attribute
+    header to a float between 0 and 1 representing the percentage
+    of songs in cluster which have the attribute vertex associated
+    to the quantifier and header.
 
-    If no such song exists, return None
+    The returned dictionary is essentially a distribution of songs
+    across the different quantifiers of an attribute header.
+
+    Preconditions:
+        - graph.are_attributes_created()
+        - len(cluster) > 0
+        - attribute_header in song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
     """
 
-    rep_song = get_cluster_representative_song(cluster)
+    distr = {}
+
+    for attr_v in graph.get_attr_vertices_by_header(attribute_header):
+        quantifier = attr_v.quantifier
+        distr[quantifier] = 0
+
+    for song_v in cluster:
+        for v in song_v.neighbours:
+            h_match = v.attribute_header == attribute_header
+            if isinstance(v, AttributeVertexContinuous) and h_match and v.matches_with(song_v.item):
+                quantifier = v.quantifier
+                distr[quantifier] += 1
+
+    return {quantifier_: distr[quantifier_] / len(cluster)
+            for quantifier_ in distr}
+
+
+def cluster_attribute_distribution(graph: SongGraph, cluster: set[SongVertex]) \
+        -> dict[str, dict[str, float]]:
+    """Return a dictionary mapping CONTINUOUS attribute headers to a
+    distribution of songs across the different quantifiers
+    of that attribute header.
+
+    (see cluster_attr_distr_by_header)
+
+    Preconditions:
+        - graph.are_attributes_created()
+        - len(cluster) > 0
+    """
+
+    to_return = {}
+
+    for attr_h in song_graph.CONTINUOUS_HEADERS:
+        to_return[attr_h] = cluster_attr_distr_by_header(
+            graph, cluster, attr_h)
+
+    return to_return
+
+
+def focused_song_to_cluster_sim(graph: SongGraph, song: Song,
+                                attribute_distribution: dict, ignore: set[str] = None) -> float:
+    """Return a similarity score between a song and song cluster.
+
+    This similarity score is based on the idea that song clusters
+    have a distinct few attributes and a measure of whether or not
+    a song belongs in a cluster should be by these key attributes.
+
+    This similarity score focuses only on the extremes in attribute
+    distribution (so only counts attributes which few songs in the cluster
+    have, or a large proportion of the songs in the cluster have).
+
+    Preconditions:
+        - graph.are_attributes_created()
+        - attribute_distribution is generated by the function
+          get_cluster_attribute_distribution
+        - ignore is None or ignore.issubset(song_graph.INT_HEADERS.union(song_graph.FLOAT_HEADERS))
+    """
+
+    # Based on the idea that clusters have a few "defining attributes"
+    # And that song similarity should be evaluated on those defining attributes
+
+    n = 0
+    net_similarity = 0
+
+    significant_cutoff = 0.25
+    too_low_cutoff = 0.1
+
+    for attr_h in song_graph.CONTINUOUS_HEADERS:
+        if ignore is None or attr_h not in ignore:
+            belongs_to = graph.song_belongs_to(song, attr_h)
+            significance = attribute_distribution[attr_h][belongs_to.quantifier]
+
+            if significance >= significant_cutoff:
+                # Essentially count this as a similarity of 1
+                # I.e. the song has an attribute that lots
+                # of songs in the cluster has.
+
+                net_similarity += 1
+                n += 1
+            elif significance <= too_low_cutoff:
+                # Essentially count this as a similarity of 0
+                # I.e. the song has an attribute that
+                # few songs in the cluster have.
+                n += 1
+
+    if n == 0:
+        return 0
+    else:
+        return net_similarity / n
+
+
+def get_similar_song_to_cluster(graph: SongGraph, cluster: set[SongVertex],
+                                similarity_threshold: float = 0.9, ignore: set[Song] = None,
+                                algorithm: str = 'focused') -> \
+        Optional[Song]:
+    """Return a song in graph.parent_graph whose similarity
+    score is above the similarity_threshold. The similarity score
+    algorithm is defined by the algorithm parameter.
+
+    The focused algorithm can be found in focused_song_to_cluster_sim.
+
+    The continuous algorithm is based on finding an average song, which
+    is more or less representative of the cluster. (see get_cluster_average_song).
+    The average song is then compared to a song in graph, with the similarity
+    score being the continuous similarity between the two songs.
+    (see get_song_similarity_continuous).
+
+    If no such song exists, return None
+
+    Preconditions:
+        - graph.are_attributes_created()
+        - len(cluster) > 0
+        - 0 <= similarity_threshold <= 1
+        - algorithm in {'focused', 'continuous'}
+    """
+
+    avg_song = get_cluster_average_song(cluster)
     songs = list(graph.get_songs())
     # Scramble songs to get unique recommended songs
     random.shuffle(songs)
 
+    if algorithm == 'focused':
+        attribute_distribution = cluster_attribute_distribution(graph, cluster)
+    else:
+        attribute_distribution = None
+
     for s1 in songs:
+        if algorithm == 'focused':
+            similarity = focused_song_to_cluster_sim(graph, s1, attribute_distribution)
+        else:
+            similarity = song_similarity_continuous(graph, avg_song, s1, use_exact_headers=False)
 
-        similarity = get_song_similarity_continuous(graph, rep_song, s1, use_exact_headers=False)
+        # Logically Equivalent to: ignore is not None IMPLIES that s1 not in ignore
+        passes_ignore = ignore is None or s1 not in ignore
 
-        if similarity > similarity_threshold:
+        if similarity > similarity_threshold and passes_ignore:
             return s1
 
     return None
 
 
-def get_recommended_song_for_cluster(graph: SongGraph, cluster: set[SongVertex]):
-    """If no recommended song exists, raise a ValueError"""
+def recommended_song_for_cluster(graph: SongGraph, cluster: set[SongVertex],
+                                 ignore: set[Song] = None) -> Song:
+    """Return a recommended song for a song cluster in graph.
+    The recommended song must not include any song in graph.
+    The recommended song comes from the graph's parent_graph.
+
+    If no recommended song exists, raise a ValueError.
+
+    Preconditions:
+        - graph.are_attributes_created()
+        - len(cluster) > 0
+        - graph.parent_graph is not None
+        - graph.parent_graph.are_attributes_created()
+    """
+
     similarity_threshold = 0.95
     song = None
 
-    while song is None and similarity_threshold >= 0 or graph.is_song_in_graph(song):
-        song = get_similar_song_to_cluster(graph.parent_graph, cluster, similarity_threshold)
+    while (song is None and similarity_threshold >= 0) or graph.is_song_in_graph(song):
+        song = get_similar_song_to_cluster(
+            graph.parent_graph, cluster, similarity_threshold, ignore)
         similarity_threshold -= 0.05
 
     if song is not None:
@@ -414,8 +627,19 @@ def get_recommended_song_for_cluster(graph: SongGraph, cluster: set[SongVertex])
         raise ValueError
 
 
-def get_recommended_song_for_playlist(pl_graph: SongGraph, clusters: list[set[SongVertex]]):
-    """"""
+def recommended_song_for_playlist(pl_graph: SongGraph,
+                                  clusters: list[set[SongVertex]],
+                                  ignore: set[Song] = None) -> tuple[Song, set[SongVertex]]:
+    """Return a recommended song for a playlist graph.
+    Do not return any songs in ignore.
+
+    If no recommended song exists, raise a ValueError.
+
+    Preconditions:
+        - pl_graph.are_attributes_created()
+        - pl_graph.parent_graph is not None
+        - pl_graph.parent_graph.are_attributes_created()
+    """
     num_songs = len([pl_graph.get_songs()])
 
     cluster_weights = [((len(cluster) / num_songs) + 1) ** 2 for cluster in clusters]
@@ -426,10 +650,24 @@ def get_recommended_song_for_playlist(pl_graph: SongGraph, clusters: list[set[So
         k=1
     )[0]
 
-    return get_recommended_song_for_cluster(pl_graph, chosen_cluster)
+    recommended_song = recommended_song_for_cluster(
+        pl_graph, chosen_cluster, ignore)
+
+    return recommended_song, chosen_cluster
 
 
+if __name__ == '__main__':
+    import doctest
+    import python_ta
+    import python_ta.contracts
 
+    doctest.testmod()
 
+    python_ta.contracts.check_all_contracts()
 
-
+    python_ta.check_all(config={
+        'extra-imports': ['typing', 'random', 'song_graph', 'networkx'],
+        'allowed-io': [],
+        'max-line-length': 100,
+        'disable': ['E1136']
+    })
