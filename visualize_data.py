@@ -60,7 +60,8 @@ def visualize_graph_with_attributes(graph: SongGraph, graph_nx: nx.Graph,
                                     output_to_html_path: str = None,
                                     layout: dict = None, config: dict = None) -> None:
     """Visualize a song graph given its corresponding clustered graph_nx
-    counterpart.
+    counterpart. The graph_nx graph must be generated according the the
+    specifications of analyze_song_graph.create_clustered_nx_song_graph.
 
     Preconditions:
         - graph.are_attributes_created()
@@ -80,12 +81,13 @@ def visualize_graph_with_attributes(graph: SongGraph, graph_nx: nx.Graph,
 
     for node_label in graph_nx.nodes:
         node = graph_nx.nodes[node_label]
-        if node['kind'] == 'attribute' and node['ends_with_int']:
+
+        if node['kind'] == 'attribute':
             attr_pos[0].append(pos[node_label][0])
             attr_pos[1].append(pos[node_label][1])
 
             attr_labels.append(remove_integer_suffix(node_label))
-        else:
+        elif node['kind'] == 'song':
             song_pos[0].append(pos[node_label][0])
             song_pos[1].append(pos[node_label][1])
             songs.append(node['song'])
@@ -121,7 +123,8 @@ def visualize_graph_with_attributes(graph: SongGraph, graph_nx: nx.Graph,
 def _make_edge_trace(graph_nx: nx.Graph, pos: dict) -> Scatter:
     """(HELPER) This function is a helper function to visualize_graph_with_attributes.
 
-    Return a trace containing lines which represent edges between nodes.
+    Return a trace containing lines which represent edges between nodes
+    given the position of nodes in pos.
     """
 
     x_edges = []
@@ -158,33 +161,31 @@ def _make_song_traces(graph: SongGraph, songs: list[Song],
     headers = sorted(CONTINUOUS_HEADERS)
 
     for header in headers:
-        # Ignore the year header
-        if header != 'year':
-            attr_values = [song.attributes[header] for song in songs]
-            min_, max_, _, _ = graph.get_attribute_header_stats(header, use_parent=True)
+        attr_values = [song.attributes[header] for song in songs]
+        min_, max_, _, _ = graph.get_attribute_header_stats(header, use_parent=True)
 
-            trace = Scatter(x=song_x,
-                            y=song_y,
-                            mode='markers',
-                            name=header,
-                            marker=dict(
-                                size=7,
-                                line=dict(width=0.5),
-                                color=attr_values,
-                                colorscale='thermal',
-                                cmin=min_,  # Base the color scale off the min and max
-                                cmax=max_  # of the parent dataset
-                            ),
-                            text=song_labels,
-                            hovertemplate='%{text}',
-                            visible='legendonly'
-                            )
+        trace = Scatter(x=song_x,
+                        y=song_y,
+                        mode='markers',
+                        name=header,
+                        marker=dict(
+                            size=7,
+                            line=dict(width=0.5),
+                            color=attr_values,
+                            colorscale='thermal',
+                            cmin=min_,  # Base the color scale off the min and max
+                            cmax=max_  # of the parent dataset
+                        ),
+                        text=song_labels,
+                        hovertemplate='%{text}',
+                        visible='legendonly'
+                        )
 
-            if is_first_header:
-                trace.visible = True
-                is_first_header = False
+        if is_first_header:
+            trace.visible = True
+            is_first_header = False
 
-            to_return.append(trace)
+        to_return.append(trace)
 
     return to_return
 
@@ -225,6 +226,10 @@ def _get_distribution_values(graph: SongGraph, attribute_header: str) -> tuple[l
         - the first element is list of quantifiers for the attribute header
         - the second element is the distribution values for the child
         - the third element is the distribution values for the parent
+
+    Preconditions:
+        - graph.are_attributes_created()
+        - attribute_header in CONTINUOUS_HEADERS
     """
 
     num_neighbours_child = []

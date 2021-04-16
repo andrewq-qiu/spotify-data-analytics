@@ -72,7 +72,7 @@ def get_song_graph_from_decades(decades: set, year_separation: int = 10) -> Song
     Each element in decades is the first year of the decade.
     For example, if decades={1980, 2000, 1930},
     then get_songs_from_decades(decades) returns songs from the 80s,
-    2000s, and 30s.
+    2000s, and 30s all in one song graph.
 
     year_separation defines the way year attribute vertices are to be
     created. I.e. the intervals in year attribute vertices. For example,

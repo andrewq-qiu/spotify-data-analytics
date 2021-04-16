@@ -79,7 +79,7 @@ def get_continuous_attr_v_pairs(graph: SongGraph, ignore: set = None,
 def most_similar_continuous_attr(graph: SongGraph, n: int = 3, ignore: set = None,
                                  keep: set = None, ignore_same_headers: bool = True) \
         -> list[tuple[str, str]]:
-    """Return the n most similar continuous attributes in graph.
+    """Return the n most similar continuous attribute pairs in graph.
     Do not return any pairs which contain attribute
     vertices with attribute headers in ignore.
 

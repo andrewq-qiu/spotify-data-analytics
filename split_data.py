@@ -69,4 +69,6 @@ if __name__ == '__main__':
         'disable': ['E1136']
     })
 
+    # Running this will process create separate csv files splitting
+    # the original dataset into the decades
     # split_songs_by_decade(1920, 2020, 'data/song_data_original.csv', 'data')

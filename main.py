@@ -35,3 +35,9 @@ if not os.path.exists('cache'):
     os.mkdir('cache')
 
 gui.show_gui()
+
+
+# Some parts are pre-generated, like the graphs and data
+# used in COOL EXTRAS or the split datasets. You can
+# generate them yourself by uncommenting the last lines
+# of cool_extras.py and split_data.py and running those files.

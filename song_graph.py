@@ -167,6 +167,9 @@ class AttributeVertex(Vertex):
         - quantifier: a string describing how much or for which values
                       of the feature described by the attribute header
                       is captured by the attribute vertex
+
+    Representation Invariants:
+        - attribute_header in INT_HEADERS.union(FLOAT_HEADERS)
     """
     item: str
     attribute_header: str
@@ -192,10 +195,24 @@ class Interval:
     """A class representing an interval of numbers that is closed/open/both.
     This class is synonymous to interval notation found in mathematics.
 
+    Instance Attributes:
+        - left_bound_type: the type of lower bound (closed or open)
+        - left_bound: the value of the lower bound
+        - right_bound: the value of the upper bound
+        - right_bound_type: the type of the upper bound (closed or open)
+
     Representation Invariants:
         - left_bound_type in {'open', 'closed'}
         - right_bound_type in {'open', 'closed'}
         - left_bound <= right_bound
+
+    >>> my_interval = Interval('open', 2.0, 3.0, 'closed')
+    >>> my_interval.is_inside(3.0)
+    True
+    >>> my_interval.is_inside(2.0)
+    False
+    >>> my_interval.is_inside(2.5)
+    True
     """
     left_bound_type: str
     left_bound: float
@@ -252,7 +269,7 @@ class AttributeVertexExact(AttributeVertex):
     value of an attribute header.
 
     For example, an instance of AttributeVertexExact
-    could represent the "mode" attribute being exactly 1.
+    could represent the "explicit" attribute being exactly 1.
 
     Instance Attributes:
         - value: the exact value represented by the attribute
@@ -307,7 +324,7 @@ class SongGraph(Graph):
         - self.parent_graph is None or self.parent_graph.are_attributes_created()
     """
 
-    parent_graph: SongGraph
+    parent_graph: Optional[SongGraph]
     num_songs: int
 
     # Private Instance Attributes:
@@ -460,7 +477,8 @@ class SongGraph(Graph):
             each be represented by an attribute vertex. Ensure that roughly
             ~1/6 songs fall into each interval.
 
-            So plotting a distribution curve will result in a flat line.
+            So plotting a distribution curve will result in a uniform
+            distribution.
         Do not use the parent graph to generate the attribute vertices.
 
         Preconditions:

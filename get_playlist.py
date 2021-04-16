@@ -285,7 +285,7 @@ def get_id_from_playlist_url(url: str) -> str:
         return to_return
 
 
-def spotify_features_to_song_attr(
+def _spotify_features_to_song_attr(
         audio_features: dict[str, Any], track_info: dict) -> dict[str, Union[float, int]]:
     """Return a dictionary of attributes compatible with the
     Song class from a dictionary of audio features and track (song)
@@ -338,14 +338,15 @@ def get_songs_from_playlist_url(
     i = 0
 
     for item in data['items']:
-        name = item['track']['name']
-        artists = [artist['name'] for artist in item['track']['artists']]
-        spotify_id = item['track']['id']
+        if features[i] is not None:
+            name = item['track']['name']
+            artists = [artist['name'] for artist in item['track']['artists']]
+            spotify_id = item['track']['id']
 
-        attributes = spotify_features_to_song_attr(features[i], item['track'])
-        songs.append(Song(name, spotify_id, artists, attributes))
+            attributes = _spotify_features_to_song_attr(features[i], item['track'])
+            songs.append(Song(name, spotify_id, artists, attributes))
 
-        i += 1
+            i += 1
 
     return songs
 

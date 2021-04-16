@@ -40,7 +40,7 @@ def song_similarity_continuous(graph: SongGraph, s1: Song, s2: Song,
     This similarity score follows a continuous algorithm, which
     means that two songs will have a higher similarity score if
     their attributes are close together, rather them being exactly
-    in the same range (which is what is used in get_vertex_similarity).
+    in the same range (which is what is used in vertex_sim_by_neighbours).
 
     Preconditions:
         - graph.num_songs >= 1
@@ -64,9 +64,9 @@ def song_similarity_continuous(graph: SongGraph, s1: Song, s2: Song,
             min_, max_, _, _ = graph.get_attribute_header_stats(attr_header, use_parent=True)
 
             # The closer they are, the more similar they should be
-            closeness = abs(s1.attributes[attr_header] - s2.attributes[attr_header]) / (max_ - min_)
+            distance = abs(s1.attributes[attr_header] - s2.attributes[attr_header]) / (max_ - min_)
 
-            net_similarity += 1 - closeness
+            net_similarity += 1 - distance
 
             num_attributes += 1
 
@@ -202,7 +202,8 @@ def attr_significance_of_cluster(
 
     I.e. the significance score will be higher if a higher proportion
     of songs in the cluster match with attr_v than the proportion of
-    songs in graph which match with attr_v.
+    songs in graph which match with attr_v. If no songs in the graph match
+    with attr_v, then return 0.
 
     Preconditions:
         - graph.are_attributes_created()
@@ -287,20 +288,19 @@ def add_top_attr_v_to_cluster(graph: SongGraph, graph_nx: nx.Graph,
 
         if attr_label in added_count:
             added_vertex_label = attr_label + str(added_count[attr_label])
-            graph_nx.add_node(added_vertex_label, kind='attribute', ends_with_int=True)
+            graph_nx.add_node(added_vertex_label, kind='attribute')
 
             added_count[attr_label] += 1
 
         else:
             added_vertex_label = attr_label + ' 0'
-            graph_nx.add_node(added_vertex_label, kind='attribute', ends_with_int=True)
+            graph_nx.add_node(added_vertex_label, kind='attribute')
 
             added_count[attr_label] = 1
 
         for song_v in cluster:
-            song_name = song_v.item.name
-
-            graph_nx.add_edge(song_name, added_vertex_label)
+            assert str(song_v.item) in graph_nx.nodes
+            graph_nx.add_edge(str(song_v.item), added_vertex_label)
 
 
 def create_clustered_nx_song_graph(graph: SongGraph, similarity_threshold: float = 0.9,
@@ -328,7 +328,7 @@ def create_clustered_nx_song_graph(graph: SongGraph, similarity_threshold: float
     graph_nx = nx.Graph()
 
     for song in graph.get_songs():
-        graph_nx.add_node(song.name, kind='song', song=song)
+        graph_nx.add_node(str(song), kind='song', song=song)
 
     # The number of times an attribute has been added to graph_nx
     added_count = {}
@@ -337,7 +337,7 @@ def create_clustered_nx_song_graph(graph: SongGraph, similarity_threshold: float
         cluster_lst = list(cluster)
 
         for i in range(1, len(cluster_lst)):
-            graph_nx.add_edge(cluster_lst[0].item.name, cluster_lst[i].item.name)
+            graph_nx.add_edge(str(cluster_lst[0].item), str(cluster_lst[i].item))
 
         # Get top three attributes for large enough clusters
         if len(cluster) >= 5:
@@ -562,7 +562,7 @@ def get_similar_song_to_cluster(graph: SongGraph, cluster: set[SongVertex],
     is more or less representative of the cluster. (see get_cluster_average_song).
     The average song is then compared to a song in graph, with the similarity
     score being the continuous similarity between the two songs.
-    (see get_song_similarity_continuous).
+    (see song_similarity_continuous).
 
     If no such song exists, return None
 

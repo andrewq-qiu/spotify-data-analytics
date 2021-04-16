@@ -51,7 +51,7 @@ GRAPH_CHART_LAYOUT = {'showlegend': True,
 GRAPH_CHART_CONFIG = {'displayModeBar': False}
 
 BAR_CHART_LAYOUT = {'showlegend': False,
-                    'margin': {'l': 0, 'r': 0, 't': 50, 'b': 100},
+                    'margin': {'l': 0, 'r': 0, 't': 50, 'b': 150},
                     'autosize': True}
 
 BAR_CHART_CONFIG = {'displayModeBar': False}
@@ -484,7 +484,7 @@ class DeviantAttributeView(Container):
 
     Instance Attributes:
         - mode: the type of data displayed | 'most' for most deviant or
-                and 'least' for least deviant attributes
+             'least' for least deviant attributes
         - num_attributes: the number of attributes to be displayed
         - charts: the list of widgets containing each distribution chart
                   for each of the deviant attributes
@@ -516,9 +516,9 @@ class DeviantAttributeView(Container):
         sub_container.setLayout(qtw.QHBoxLayout())
 
         if self.mode == 'most':
-            deviated_title = SubHeading('The top three most deviant attributes:')
+            deviated_title = SubHeading('The top three most deviant attributes: (distributions)')
         else:
-            deviated_title = SubHeading('The top three least deviant attributes:')
+            deviated_title = SubHeading('The top three least deviant attributes: (distributions)')
 
         legend = qtw.QWidget()
         legend.setFixedSize(900, 30)
@@ -781,6 +781,9 @@ class PlayPauseButton(qtw.QPushButton):
         - connected_buttons: a set of PlayPauseButton instances which interact with self such that
                              when self is playing, all buttons in the set are paused.
                              When any button in the set is playing, self is paused.
+
+    Representation Invariants:
+        - self.paused or all(other.paused for other in self.connected_buttons)
     """
 
     song_url: Optional[str]
@@ -931,6 +934,8 @@ class RecommendedSongsView(qtw.QWidget):
     to a user given their playlist.
 
     Instance Attributes:
+        - mixer: the Mixer instance responsible for handling the playback
+                 of songs.
         - song_previews: a list containing SongPreview instances
                          for displaying individual previews for each of
                          the recommended songs
@@ -1054,6 +1059,13 @@ class PlaylistView(qtw.QScrollArea):
         container.setMinimumHeight(800)
 
         self.title_view = PlayListViewTitle()
+        message = SmallText('Double click on items in the legend to isolate them.'
+                            '\nThe songs are colored by the attribute selected, '
+                            'where blue represents low and yellow represents high.'
+                            'Red is somewhere in-between.'
+                            '\nThe green nodes are the characteristic attribute vertices'
+                            ' for each cluster.')
+        message.setStyleSheet('margin-left: 15px;')
 
         self.graph_view = QWebEngineView()
         self.graph_view.setFixedSize(900, 800)
@@ -1066,6 +1078,7 @@ class PlaylistView(qtw.QScrollArea):
         self.recommended_songs_view = RecommendedSongsView()
 
         container.layout().addWidget(self.title_view)
+        container.layout().addWidget(message)
         container.layout().addWidget(self.graph_view)
         container.layout().addWidget(self.most_deviant_view)
         container.layout().addWidget(self.least_deviant_view)
