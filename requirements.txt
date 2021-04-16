@@ -1,0 +1,14 @@
+# For accessing the Spotify API and downloading song sampels
+requests~=2.25.1
+# For the GUI
+PyQt5~=5.15.4
+# For the playback of songs
+pygame~=2.0.1
+# For accessing the API access credentials as environmental variables
+python-dotenv~=0.16.0
+# For splitting the data in split_data.py
+pandas~=1.2.1
+# For charting the clusters of the graph, and for
+# creating interactive charts for the visualization
+networkx~=2.5
+plotly~=4.14.3
