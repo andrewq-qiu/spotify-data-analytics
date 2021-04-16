@@ -42,16 +42,18 @@ import get_dataset_data
 DEFAULT_PLAYLISTS = {
     'My Playlist': 'https://open.spotify.com/playlist/37i9dQZF1E37NlLG'
                    '3OEVtr?si=wGLNP1faSz--_52wf87H_A',
-    "Kevin's Playlist": 'https://open.spotify.com/playlist/2lBR4CNNTu'
+    "okay (My Friend's Playlist)": 'https://open.spotify.com/playlist/2lBR4CNNTu'
                         'a6ElWknxgJWi?si=cc415d7969fe4788&nd=1',
-    'Spotify Rap Jazz and Chill': 'https://open.spotify.com/playlist/6QrU3'
+    'Rap Jazz and Chill': 'https://open.spotify.com/playlist/6QrU3'
                                   'UUxANjjstAKuGlSsK?si=-EPeSOLYQFi6eWzPFP3nYA',
-    'Spotify Jazz in the Background': 'https://open.spotify.com/playlist/37i9dQZF1'
+    'Jazz in the Background': 'https://open.spotify.com/playlist/37i9dQZF1'
                                       'DWV7EzJMK2FUI?si=nC7MSsBlTqqOas9sX_XZlw',
     'Hot Hits Canada': 'https://open.spotify.com/playlist/37i9dQZ'
                        'F1DWXT8uSSn6PRy?si=GB2-0gBrT0GYnVrFKWSeLA',
-    'Rap 2021 | Hip Hop & Rap Hits 2021': 'https://open.spotify.com/playlist/5x4vTYH7dI'
-                                          'Z2A4tviBajlk?si=PZoAJa49QAiE8KA-JVbYDA'
+    'Rap Hits': 'https://open.spotify.com/playlist/5x4vTYH7dI'
+                                          'Z2A4tviBajlk?si=PZoAJa49QAiE8KA-JVbYDA',
+    'This is Taylor Swift': 'https://open.spotify.com/playlist/37i9d'
+                            'QZF1DX5KpP2LN299J?si=a9gwrnj_Q9uXVS124zVXQw'
 }
 
 
