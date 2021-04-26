@@ -43,11 +43,11 @@ DEFAULT_PLAYLISTS = {
     'My Playlist': 'https://open.spotify.com/playlist/37i9dQZF1E37NlLG'
                    '3OEVtr?si=wGLNP1faSz--_52wf87H_A',
     "okay (My Friend's Playlist)": 'https://open.spotify.com/playlist/2lBR4CNNTu'
-                        'a6ElWknxgJWi?si=cc415d7969fe4788&nd=1',
+                                   'a6ElWknxgJWi?si=cc415d7969fe4788&nd=1',
     'Rap Jazz and Chill': 'https://open.spotify.com/playlist/6QrU3'
-                                  'UUxANjjstAKuGlSsK?si=-EPeSOLYQFi6eWzPFP3nYA',
+                          'UUxANjjstAKuGlSsK?si=-EPeSOLYQFi6eWzPFP3nYA',
     'Jazz in the Background': 'https://open.spotify.com/playlist/37i9dQZF1'
-                                      'DWV7EzJMK2FUI?si=nC7MSsBlTqqOas9sX_XZlw',
+                              'DWV7EzJMK2FUI?si=nC7MSsBlTqqOas9sX_XZlw',
     'Hot Hits Canada': 'https://open.spotify.com/playlist/37i9dQZ'
                        'F1DWXT8uSSn6PRy?si=GB2-0gBrT0GYnVrFKWSeLA',
     'Rap Hits': 'https://open.spotify.com/playlist/1HDS'
@@ -384,7 +384,8 @@ def create_song_graph_from_songs(songs: list[Song],
 
 
 def get_ds_and_pl_graphs_from_url(
-        token_manager: SpotifyTokenManager, playlist_url: str, year_separation: int = 10) ->\
+        token_manager: SpotifyTokenManager, playlist_url: str,
+        year_separation: int = 10, print_progress: bool = False) ->\
         tuple[song_graph.SongGraph, song_graph.SongGraph]:
     """From a Spotify playlist URL, load relevant songs
     from the Spotify dataset in the decades of songs spanned by the playlist.
@@ -401,6 +402,9 @@ def get_ds_and_pl_graphs_from_url(
     Return a tuple containing (dataset_graph, playlist_graph).
     """
 
+    if print_progress:
+        print('Retrieving songs from Spotify API...')
+
     songs = get_songs_from_playlist_url(token_manager, playlist_url)
 
     decades_spanned = set()
@@ -408,6 +412,10 @@ def get_ds_and_pl_graphs_from_url(
         # The decade of the song represented by the first year of the decade
         decade = (song.attributes['year'] // 10) * 10
         decades_spanned.add(decade)
+
+    if print_progress:
+        print('Retrieving song data from decades: ',
+              ', '.join([str(dec) for dec in decades_spanned]))
 
     dataset_graph = get_dataset_data.get_song_graph_from_decades(decades_spanned, year_separation)
     playlist_graph = create_song_graph_from_songs(songs,
@@ -429,7 +437,7 @@ if __name__ == '__main__':
     python_ta.check_all(config={
         'extra-imports': ['typing', 'time', 'requests', 'base64', 'os',
                           'json', 'song_graph', 'get_dataset_data'],
-        'allowed-io': [],
+        'allowed-io': ['get_ds_and_pl_graphs_from_url'],
         'max-line-length': 100,
         'disable': ['E1136']
     })

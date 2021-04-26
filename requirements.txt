@@ -5,6 +5,7 @@ PyQt5~=5.15.4
 PyQtWebEngine~=5.15.4
 # For the playback of songs
 pygame~=2.0.1
+pydub~=0.25.1
 # For accessing the API access credentials as environmental variables
 python-dotenv~=0.16.0
 # For splitting the data in split_data.py

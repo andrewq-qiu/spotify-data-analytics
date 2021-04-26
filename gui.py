@@ -29,6 +29,7 @@ import os
 import sys
 from typing import Optional
 import requests
+import pydub
 import PyQt5.QtWidgets as qtw
 import PyQt5.QtGui as qtg
 from PyQt5.QtCore import QUrl
@@ -690,6 +691,7 @@ class Mixer:
 
     def download_song(self, song_url: str) -> Optional[int]:
         """Download a song as an mp3 file given a song_url.
+        Convert the mp3 file to a .wav file for pygame support.
         In success, return the index of the new song in the cache.
         Otherwise, return None.
 
@@ -708,12 +710,22 @@ class Mixer:
         with open(f'cache/cached_song_{new_index}.mp3', 'wb') as f:
             f.write(data.content)
 
+        sound = pydub.AudioSegment.from_mp3(f'cache/cached_song_{new_index}.mp3')
+        sound.export(f'cache/cached_song_{new_index}.wav', format='wav')
+
+        # Remove old file
+        os.remove(f'cache/cached_song_{new_index}.mp3')
+
         self._downloaded_songs[song_url] = new_index
 
         return new_index
 
     def play_from_url(self, url: str) -> None:
         """Play a sound given a url to an mp3 file of that sound.
+        If the sound has not already been downloaded, download
+        the song and convert it to a .wav format.
+
+        Play the cached .wav file.
 
         If no mp3 file is successfully retrieved, raise a ValueError.
         """
@@ -726,7 +738,7 @@ class Mixer:
         if index is None:
             raise ValueError
 
-        pygame.mixer.music.load(f'cache/cached_song_{index}.mp3')
+        pygame.mixer.music.load(f'cache/cached_song_{index}.wav')
         self.current_song_url = url
         self.play()
 
@@ -1155,7 +1167,9 @@ class PlaylistPage(Page):
         """Fill in the user interface of the page given a playlist_url."""
 
         _, pl_graph = get_playlist.get_ds_and_pl_graphs_from_url(
-            self.token_manager, playlist_url)
+            self.token_manager, playlist_url, print_progress=True)
+
+        print('Creating charts...')
 
         self.playlist_view.fill_ui(self.token_manager, playlist_url, pl_graph)
 
@@ -1204,7 +1218,7 @@ if __name__ == '__main__':
                           'PyQt5.QtGui', 'PyQt5.QtCore', 'PyQt5.QtWebEngineWidgets',
                           'pygame.mixer', 'get_playlist', 'visualize_data', 'analyze_song_graph',
                           'song_graph', 'sys'],
-        'allowed-io': ['show_gui', 'download_song'],
+        'allowed-io': ['show_gui', 'download_song', 'load_playlist_url'],
         'max-line-length': 100,
         'disable': ['E1136', 'E0611']
     })
